@@ -1616,6 +1616,605 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "timestamp": now.isoformat()
     })
 
+# ============ PAYMENT BOT HANDLERS ============
+
+async def payment_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Welcome message for payment bot"""
+    user = update.effective_user
+    
+    welcome_msg = (
+        "💳 *Bem-vindo ao Bot de Pagamentos Ananda!*\n\n"
+        "Aqui você pode:\n"
+        "• Assinar planos Premium/VIP\n"
+        "• Comprar meditações e orações\n"
+        "• Fazer doações voluntárias\n"
+        "• Ver seu histórico de compras\n\n"
+        "Use /menu para ver todas as opções!"
+    )
+    await update.message.reply_text(welcome_msg, parse_mode='Markdown')
+
+async def payment_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show payment menu"""
+    menu_text = (
+        "📋 *Menu de Pagamentos*\n\n"
+        "💫 *Assinaturas Mensais:*\n"
+        "/premium - R$ 19,90/mês\n"
+        "/vip - R$ 39,90/mês\n\n"
+        "🧘 *Compras Avulsas:*\n"
+        "/meditacao - R$ 4,90 (1 meditação)\n"
+        "/pacote - R$ 29,90 (10 meditações)\n"
+        "/oracao - R$ 2,90 (1 oração)\n\n"
+        "💝 *Doação:*\n"
+        "/doar [valor] - Contribuição voluntária\n\n"
+        "📊 *Conta:*\n"
+        "/minhascompras - Histórico de compras\n"
+        "/meusaldo - Saldo de meditações/orações\n\n"
+        "👑 *Admin:*\n"
+        "/stats - Estatísticas\n"
+        "/vendas - Relatório de vendas\n"
+        "/usuarios - Lista de usuários"
+    )
+    await update.message.reply_text(menu_text, parse_mode='Markdown')
+
+async def payment_premium_mp(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Create premium subscription via Mercado Pago"""
+    user = update.effective_user
+    
+    if not mp_sdk:
+        await update.message.reply_text("❌ Sistema de pagamento indisponível no momento.")
+        return
+    
+    backend_url = os.environ.get("REACT_APP_BACKEND_URL", "")
+    plan = PLANS["premium"]
+    
+    preference_data = {
+        "items": [{
+            "id": "ananda_premium",
+            "title": f"Ananda {plan['name']} - 30 dias",
+            "description": ", ".join(plan["features"]),
+            "quantity": 1,
+            "currency_id": "BRL",
+            "unit_price": plan["price_brl"]
+        }],
+        "back_urls": {
+            "success": f"{backend_url}/api/mercadopago/success",
+            "failure": f"{backend_url}/api/mercadopago/failure",
+            "pending": f"{backend_url}/api/mercadopago/pending"
+        },
+        "auto_return": "approved",
+        "external_reference": f"{user.id}|premium|{datetime.now(timezone.utc).timestamp()}",
+        "notification_url": f"{backend_url}/api/mercadopago/webhook"
+    }
+    
+    try:
+        response = mp_sdk.preference().create(preference_data)
+        if response["status"] == 201:
+            pref = response["response"]
+            
+            await db.mp_payments.insert_one({
+                "id": str(uuid.uuid4()),
+                "preference_id": pref["id"],
+                "telegram_id": str(user.id),
+                "plan": "premium",
+                "amount": plan["price_brl"],
+                "status": "pending",
+                "payment_method": "checkout_pro",
+                "created_at": datetime.now(timezone.utc).isoformat()
+            })
+            
+            await update.message.reply_text(
+                f"⭐ *Assinatura Premium - R$ {plan['price_brl']:.2f}/mês*\n\n"
+                f"Benefícios:\n• " + "\n• ".join(plan["features"]) + "\n\n"
+                f"🔗 [Clique aqui para pagar]({pref['init_point']})\n\n"
+                "_Link válido por 24 horas_",
+                parse_mode='Markdown',
+                disable_web_page_preview=True
+            )
+        else:
+            await update.message.reply_text("❌ Erro ao gerar link de pagamento. Tente novamente.")
+    except Exception as e:
+        logger.error(f"Payment bot premium error: {e}")
+        await update.message.reply_text("❌ Erro ao processar. Tente novamente.")
+
+async def payment_vip_mp(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Create VIP subscription via Mercado Pago"""
+    user = update.effective_user
+    
+    if not mp_sdk:
+        await update.message.reply_text("❌ Sistema de pagamento indisponível no momento.")
+        return
+    
+    backend_url = os.environ.get("REACT_APP_BACKEND_URL", "")
+    plan = PLANS["vip"]
+    
+    preference_data = {
+        "items": [{
+            "id": "ananda_vip",
+            "title": f"Ananda {plan['name']} - 30 dias",
+            "description": ", ".join(plan["features"]),
+            "quantity": 1,
+            "currency_id": "BRL",
+            "unit_price": plan["price_brl"]
+        }],
+        "back_urls": {
+            "success": f"{backend_url}/api/mercadopago/success",
+            "failure": f"{backend_url}/api/mercadopago/failure",
+            "pending": f"{backend_url}/api/mercadopago/pending"
+        },
+        "auto_return": "approved",
+        "external_reference": f"{user.id}|vip|{datetime.now(timezone.utc).timestamp()}",
+        "notification_url": f"{backend_url}/api/mercadopago/webhook"
+    }
+    
+    try:
+        response = mp_sdk.preference().create(preference_data)
+        if response["status"] == 201:
+            pref = response["response"]
+            
+            await db.mp_payments.insert_one({
+                "id": str(uuid.uuid4()),
+                "preference_id": pref["id"],
+                "telegram_id": str(user.id),
+                "plan": "vip",
+                "amount": plan["price_brl"],
+                "status": "pending",
+                "payment_method": "checkout_pro",
+                "created_at": datetime.now(timezone.utc).isoformat()
+            })
+            
+            await update.message.reply_text(
+                f"👑 *Assinatura VIP - R$ {plan['price_brl']:.2f}/mês*\n\n"
+                f"Benefícios:\n• " + "\n• ".join(plan["features"]) + "\n\n"
+                f"🔗 [Clique aqui para pagar]({pref['init_point']})\n\n"
+                "_Link válido por 24 horas_",
+                parse_mode='Markdown',
+                disable_web_page_preview=True
+            )
+        else:
+            await update.message.reply_text("❌ Erro ao gerar link de pagamento. Tente novamente.")
+    except Exception as e:
+        logger.error(f"Payment bot VIP error: {e}")
+        await update.message.reply_text("❌ Erro ao processar. Tente novamente.")
+
+async def payment_meditacao(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Buy single meditation"""
+    user = update.effective_user
+    product = PRODUCTS["meditacao"]
+    
+    if not mp_sdk:
+        await update.message.reply_text("❌ Sistema de pagamento indisponível.")
+        return
+    
+    backend_url = os.environ.get("REACT_APP_BACKEND_URL", "")
+    
+    preference_data = {
+        "items": [{
+            "id": "ananda_meditacao",
+            "title": product["name"],
+            "description": product["description"],
+            "quantity": 1,
+            "currency_id": "BRL",
+            "unit_price": product["price_brl"]
+        }],
+        "back_urls": {
+            "success": f"{backend_url}/api/mercadopago/success",
+            "failure": f"{backend_url}/api/mercadopago/failure",
+            "pending": f"{backend_url}/api/mercadopago/pending"
+        },
+        "auto_return": "approved",
+        "external_reference": f"{user.id}|meditacao|{datetime.now(timezone.utc).timestamp()}",
+        "notification_url": f"{backend_url}/api/mercadopago/webhook"
+    }
+    
+    try:
+        response = mp_sdk.preference().create(preference_data)
+        if response["status"] == 201:
+            pref = response["response"]
+            
+            await db.mp_payments.insert_one({
+                "id": str(uuid.uuid4()),
+                "preference_id": pref["id"],
+                "telegram_id": str(user.id),
+                "product": "meditacao",
+                "amount": product["price_brl"],
+                "status": "pending",
+                "created_at": datetime.now(timezone.utc).isoformat()
+            })
+            
+            await update.message.reply_text(
+                f"🧘 *{product['name']} - R$ {product['price_brl']:.2f}*\n\n"
+                f"{product['description']}\n\n"
+                f"🔗 [Clique aqui para pagar]({pref['init_point']})",
+                parse_mode='Markdown',
+                disable_web_page_preview=True
+            )
+    except Exception as e:
+        logger.error(f"Payment meditacao error: {e}")
+        await update.message.reply_text("❌ Erro ao processar.")
+
+async def payment_pacote(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Buy meditation package"""
+    user = update.effective_user
+    product = PRODUCTS["pacote_meditacao"]
+    
+    if not mp_sdk:
+        await update.message.reply_text("❌ Sistema de pagamento indisponível.")
+        return
+    
+    backend_url = os.environ.get("REACT_APP_BACKEND_URL", "")
+    
+    preference_data = {
+        "items": [{
+            "id": "ananda_pacote_meditacao",
+            "title": product["name"],
+            "description": product["description"],
+            "quantity": 1,
+            "currency_id": "BRL",
+            "unit_price": product["price_brl"]
+        }],
+        "back_urls": {
+            "success": f"{backend_url}/api/mercadopago/success",
+            "failure": f"{backend_url}/api/mercadopago/failure",
+            "pending": f"{backend_url}/api/mercadopago/pending"
+        },
+        "auto_return": "approved",
+        "external_reference": f"{user.id}|pacote_meditacao|{datetime.now(timezone.utc).timestamp()}",
+        "notification_url": f"{backend_url}/api/mercadopago/webhook"
+    }
+    
+    try:
+        response = mp_sdk.preference().create(preference_data)
+        if response["status"] == 201:
+            pref = response["response"]
+            
+            await db.mp_payments.insert_one({
+                "id": str(uuid.uuid4()),
+                "preference_id": pref["id"],
+                "telegram_id": str(user.id),
+                "product": "pacote_meditacao",
+                "quantity": product["quantity"],
+                "amount": product["price_brl"],
+                "status": "pending",
+                "created_at": datetime.now(timezone.utc).isoformat()
+            })
+            
+            await update.message.reply_text(
+                f"📦 *{product['name']} - R$ {product['price_brl']:.2f}*\n\n"
+                f"💰 Economia de R$ 19,10!\n"
+                f"{product['description']}\n\n"
+                f"🔗 [Clique aqui para pagar]({pref['init_point']})",
+                parse_mode='Markdown',
+                disable_web_page_preview=True
+            )
+    except Exception as e:
+        logger.error(f"Payment pacote error: {e}")
+        await update.message.reply_text("❌ Erro ao processar.")
+
+async def payment_oracao(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Buy single prayer"""
+    user = update.effective_user
+    product = PRODUCTS["oracao"]
+    
+    if not mp_sdk:
+        await update.message.reply_text("❌ Sistema de pagamento indisponível.")
+        return
+    
+    backend_url = os.environ.get("REACT_APP_BACKEND_URL", "")
+    
+    preference_data = {
+        "items": [{
+            "id": "ananda_oracao",
+            "title": product["name"],
+            "description": product["description"],
+            "quantity": 1,
+            "currency_id": "BRL",
+            "unit_price": product["price_brl"]
+        }],
+        "back_urls": {
+            "success": f"{backend_url}/api/mercadopago/success",
+            "failure": f"{backend_url}/api/mercadopago/failure",
+            "pending": f"{backend_url}/api/mercadopago/pending"
+        },
+        "auto_return": "approved",
+        "external_reference": f"{user.id}|oracao|{datetime.now(timezone.utc).timestamp()}",
+        "notification_url": f"{backend_url}/api/mercadopago/webhook"
+    }
+    
+    try:
+        response = mp_sdk.preference().create(preference_data)
+        if response["status"] == 201:
+            pref = response["response"]
+            
+            await db.mp_payments.insert_one({
+                "id": str(uuid.uuid4()),
+                "preference_id": pref["id"],
+                "telegram_id": str(user.id),
+                "product": "oracao",
+                "amount": product["price_brl"],
+                "status": "pending",
+                "created_at": datetime.now(timezone.utc).isoformat()
+            })
+            
+            await update.message.reply_text(
+                f"🙏 *{product['name']} - R$ {product['price_brl']:.2f}*\n\n"
+                f"{product['description']}\n\n"
+                f"🔗 [Clique aqui para pagar]({pref['init_point']})",
+                parse_mode='Markdown',
+                disable_web_page_preview=True
+            )
+    except Exception as e:
+        logger.error(f"Payment oracao error: {e}")
+        await update.message.reply_text("❌ Erro ao processar.")
+
+async def payment_doar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Voluntary donation"""
+    user = update.effective_user
+    
+    # Get donation amount from args
+    if not context.args:
+        await update.message.reply_text(
+            "💝 *Doação Voluntária*\n\n"
+            "Use: /doar [valor]\n\n"
+            "Exemplos:\n"
+            "• /doar 10\n"
+            "• /doar 25.50\n"
+            "• /doar 100\n\n"
+            "_Qualquer valor é bem-vindo e ajuda a manter o projeto!_",
+            parse_mode='Markdown'
+        )
+        return
+    
+    try:
+        amount = float(context.args[0].replace(",", "."))
+        if amount < 1:
+            await update.message.reply_text("❌ Valor mínimo para doação: R$ 1,00")
+            return
+        if amount > 10000:
+            await update.message.reply_text("❌ Valor máximo: R$ 10.000,00")
+            return
+    except ValueError:
+        await update.message.reply_text("❌ Valor inválido. Use números (ex: /doar 10)")
+        return
+    
+    if not mp_sdk:
+        await update.message.reply_text("❌ Sistema de pagamento indisponível.")
+        return
+    
+    backend_url = os.environ.get("REACT_APP_BACKEND_URL", "")
+    
+    preference_data = {
+        "items": [{
+            "id": "ananda_doacao",
+            "title": "Doação para Ananda",
+            "description": "Contribuição voluntária para manter o projeto",
+            "quantity": 1,
+            "currency_id": "BRL",
+            "unit_price": amount
+        }],
+        "back_urls": {
+            "success": f"{backend_url}/api/mercadopago/success",
+            "failure": f"{backend_url}/api/mercadopago/failure",
+            "pending": f"{backend_url}/api/mercadopago/pending"
+        },
+        "auto_return": "approved",
+        "external_reference": f"{user.id}|doacao|{datetime.now(timezone.utc).timestamp()}",
+        "notification_url": f"{backend_url}/api/mercadopago/webhook"
+    }
+    
+    try:
+        response = mp_sdk.preference().create(preference_data)
+        if response["status"] == 201:
+            pref = response["response"]
+            
+            await db.mp_payments.insert_one({
+                "id": str(uuid.uuid4()),
+                "preference_id": pref["id"],
+                "telegram_id": str(user.id),
+                "product": "doacao",
+                "amount": amount,
+                "status": "pending",
+                "created_at": datetime.now(timezone.utc).isoformat()
+            })
+            
+            await update.message.reply_text(
+                f"💝 *Doação de R$ {amount:.2f}*\n\n"
+                f"Muito obrigado pelo seu carinho e apoio!\n"
+                f"Sua contribuição ajuda a manter Ananda ativa.\n\n"
+                f"🔗 [Clique aqui para doar]({pref['init_point']})\n\n"
+                f"_Que Deus abençoe sua generosidade!_ 🙏",
+                parse_mode='Markdown',
+                disable_web_page_preview=True
+            )
+    except Exception as e:
+        logger.error(f"Payment donation error: {e}")
+        await update.message.reply_text("❌ Erro ao processar.")
+
+async def payment_minhas_compras(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show user's purchase history"""
+    user = update.effective_user
+    
+    payments = await db.mp_payments.find(
+        {"telegram_id": str(user.id), "status": "approved"},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(20)
+    
+    if not payments:
+        await update.message.reply_text(
+            "📋 *Histórico de Compras*\n\n"
+            "Você ainda não fez nenhuma compra.\n\n"
+            "Use /menu para ver as opções disponíveis!",
+            parse_mode='Markdown'
+        )
+        return
+    
+    text = "📋 *Histórico de Compras*\n\n"
+    total = 0
+    
+    for p in payments[:10]:
+        date = p.get("created_at", "")[:10]
+        product = p.get("product") or p.get("plan", "N/A")
+        amount = p.get("amount", 0)
+        total += amount
+        
+        if product == "premium":
+            emoji = "⭐"
+            name = "Premium"
+        elif product == "vip":
+            emoji = "👑"
+            name = "VIP"
+        elif product == "meditacao":
+            emoji = "🧘"
+            name = "Meditação"
+        elif product == "pacote_meditacao":
+            emoji = "📦"
+            name = "Pacote 10 Meditações"
+        elif product == "oracao":
+            emoji = "🙏"
+            name = "Oração"
+        elif product == "doacao":
+            emoji = "💝"
+            name = "Doação"
+        else:
+            emoji = "💳"
+            name = product
+        
+        text += f"{emoji} {name} - R$ {amount:.2f} ({date})\n"
+    
+    text += f"\n💰 *Total investido:* R$ {total:.2f}"
+    
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+async def payment_meu_saldo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show user's balance (credits)"""
+    user = update.effective_user
+    
+    # Get user's credits from database
+    user_credits = await db.user_credits.find_one(
+        {"telegram_id": str(user.id)},
+        {"_id": 0}
+    )
+    
+    if not user_credits:
+        user_credits = {"meditacoes": 0, "oracoes": 0}
+    
+    # Get subscription
+    sub = await get_user_subscription(str(user.id))
+    plan = PLANS.get(sub.get("plan", "free"), PLANS["free"])
+    
+    text = (
+        "💰 *Seu Saldo*\n\n"
+        f"⭐ *Plano:* {plan['name']}\n"
+    )
+    
+    if sub.get("expires_at"):
+        exp = sub["expires_at"][:10] if isinstance(sub["expires_at"], str) else sub["expires_at"].strftime("%d/%m/%Y")
+        text += f"📅 *Expira:* {exp}\n"
+    
+    text += f"\n🧘 *Meditações avulsas:* {user_credits.get('meditacoes', 0)}\n"
+    text += f"🙏 *Orações avulsas:* {user_credits.get('oracoes', 0)}\n"
+    
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+async def payment_stats_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin: Show statistics"""
+    user = update.effective_user
+    
+    # Check if admin
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("❌ Comando apenas para administradores.")
+        return
+    
+    # Get stats
+    total_users = await db.users.count_documents({})
+    premium_users = await db.subscriptions.count_documents({"plan": "premium"})
+    vip_users = await db.subscriptions.count_documents({"plan": "vip"})
+    
+    # Payment stats
+    total_payments = await db.mp_payments.count_documents({"status": "approved"})
+    
+    # Calculate total revenue
+    pipeline = [
+        {"$match": {"status": "approved"}},
+        {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
+    ]
+    revenue_result = await db.mp_payments.aggregate(pipeline).to_list(1)
+    total_revenue = revenue_result[0]["total"] if revenue_result else 0
+    
+    # Today's revenue
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    pipeline_today = [
+        {"$match": {"status": "approved", "created_at": {"$gte": today_start}}},
+        {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
+    ]
+    today_result = await db.mp_payments.aggregate(pipeline_today).to_list(1)
+    today_revenue = today_result[0]["total"] if today_result else 0
+    
+    text = (
+        "📊 *Estatísticas Ananda*\n\n"
+        f"👥 *Usuários:* {total_users}\n"
+        f"⭐ *Premium:* {premium_users}\n"
+        f"👑 *VIP:* {vip_users}\n\n"
+        f"💳 *Pagamentos aprovados:* {total_payments}\n"
+        f"💰 *Receita total:* R$ {total_revenue:.2f}\n"
+        f"📅 *Receita hoje:* R$ {today_revenue:.2f}"
+    )
+    
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+async def payment_vendas_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin: Show recent sales"""
+    user = update.effective_user
+    
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("❌ Comando apenas para administradores.")
+        return
+    
+    payments = await db.mp_payments.find(
+        {"status": "approved"},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(15)
+    
+    if not payments:
+        await update.message.reply_text("📋 Nenhuma venda registrada ainda.")
+        return
+    
+    text = "💰 *Últimas Vendas*\n\n"
+    
+    for p in payments:
+        date = p.get("created_at", "")[:16].replace("T", " ")
+        product = p.get("product") or p.get("plan", "N/A")
+        amount = p.get("amount", 0)
+        tg_id = p.get("telegram_id", "?")
+        
+        text += f"• R$ {amount:.2f} - {product} (ID: {tg_id[:6]}...)\n"
+    
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+async def payment_usuarios_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin: List users"""
+    user = update.effective_user
+    
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("❌ Comando apenas para administradores.")
+        return
+    
+    users = await db.users.find({}, {"_id": 0}).sort("created_at", -1).to_list(20)
+    
+    if not users:
+        await update.message.reply_text("👥 Nenhum usuário registrado ainda.")
+        return
+    
+    text = "👥 *Últimos Usuários*\n\n"
+    
+    for u in users:
+        name = u.get("name", "N/A")[:15]
+        tg_id = u.get("telegram_id", "?")
+        status = "🚫" if u.get("is_banned") else "✅"
+        
+        text += f"{status} {name} (`{tg_id}`)\n"
+    
+    await update.message.reply_text(text, parse_mode='Markdown')
+
 # ============ FASTAPI APP ============
 
 @asynccontextmanager
