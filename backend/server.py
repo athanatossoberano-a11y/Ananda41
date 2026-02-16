@@ -32,6 +32,11 @@ TG_TOKEN = os.environ.get("TG_TOKEN", "")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
 
+# Mercado Pago Configuration
+MP_ACCESS_TOKEN = os.environ.get("MP_ACCESS_TOKEN", "")
+MP_PUBLIC_KEY = os.environ.get("MP_PUBLIC_KEY", "")
+mp_sdk = mercadopago.SDK(MP_ACCESS_TOKEN) if MP_ACCESS_TOKEN else None
+
 # Subscription Plans (Telegram Stars)
 PLANS = {
     "free": {
