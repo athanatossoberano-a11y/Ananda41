@@ -1,85 +1,109 @@
-# Ananda - Guia Espiritual Bot PRD
+# Ananda - Sistema Completo PRD
 
 ## Problem Statement
-Bot Telegram chamado Ananda, guia espiritual e conselheira. Integração com Mercado Pago para pagamentos via Checkout Pro, PIX e Webhooks.
+Sistema de bot espiritual Ananda com dois bots Telegram:
+1. **Bot Principal (Ananda)**: Conversas espirituais, meditações, orações
+2. **Bot de Pagamentos**: Vendas, assinaturas, doações, admin
 
 ## Architecture
-- **Backend**: FastAPI + Python-Telegram-Bot + Motor (MongoDB async)
+- **Backend**: FastAPI + Python-Telegram-Bot + Motor (MongoDB)
 - **Frontend**: React + Tailwind CSS (Dashboard Admin)
 - **AI**: Gemini 2.5 Flash via Emergent LLM Key
 - **Database**: MongoDB
-- **Pagamentos**: Telegram Stars (XTR) + **Mercado Pago (BRL)**
+- **Pagamentos**: Mercado Pago (Checkout Pro, PIX)
 
-## Pricing Plans
-| Plano | Preço Stars | Preço BRL | Limite Mensagens | Benefícios |
-|-------|-------------|-----------|------------------|------------|
-| Gratuito | 0 | R$ 0 | 10/dia | Comandos básicos |
-| Premium | 200/mês | R$ 19,90/mês | Ilimitado | Meditações, orações, prioridade |
-| VIP | 400/mês | R$ 39,90/mês | Ilimitado | Tudo Premium + conteúdo exclusivo |
+## Modelos de Monetização
 
-## What's Been Implemented (Feb 2026)
+### Assinaturas Mensais
+| Plano | Preço | Benefícios |
+|-------|-------|------------|
+| Gratuito | R$ 0 | 10 conversas/dia |
+| Premium | R$ 19,90/mês | Conversas ilimitadas, meditações, orações |
+| VIP | R$ 39,90/mês | Tudo Premium + conteúdo exclusivo |
 
-### Mercado Pago Integration (NEW)
-- [x] GET `/api/mercadopago/public-key` - Retorna public key
-- [x] GET `/api/mercadopago/plans` - Lista planos com preços BRL
-- [x] POST `/api/mercadopago/checkout` - Cria preferência Checkout Pro
-- [x] POST `/api/mercadopago/pix` - Cria pagamento PIX com QR Code
-- [x] GET `/api/mercadopago/payment/{id}` - Status do pagamento
-- [x] POST `/api/mercadopago/webhook` - Recebe notificações MP
-- [x] GET `/api/mercadopago/success|failure|pending` - Redirects após pagamento
-- [x] GET `/api/mercadopago/payments` - Lista pagamentos MP
+### Compras Avulsas
+| Produto | Preço | Descrição |
+|---------|-------|-----------|
+| Meditação | R$ 4,90 | 1 meditação guiada |
+| Pacote 10 | R$ 29,90 | 10 meditações (economia R$ 19,10) |
+| Oração | R$ 2,90 | 1 oração personalizada |
 
-### Bot Telegram - Comandos Usuário
-- [x] `/start`, `/help`, `/meditar`, `/orar`, `/versiculo`
-- [x] `/pedido`, `/compartilhar`, `/meunome`
-- [x] `/assinar`, `/meuplano`, `/premium`, `/vip`
+### Doação Voluntária
+- Valor livre (mínimo R$ 1,00)
 
-### Bot Telegram - Comandos Admin
-- [x] `/stats`, `/users`, `/online`, `/check`, `/msg`
-- [x] `/historico`, `/ban`, `/unban`, `/resetwarn`
-- [x] `/broadcast`, `/pedidos`, `/enviarversiculo`
+## Bots Telegram
 
-### Sistema de Pagamentos
-- [x] Telegram Stars (XTR)
-- [x] Mercado Pago Checkout Pro
-- [x] Mercado Pago PIX
-- [x] Webhooks para ativação automática
-- [x] Limite de 10 msgs/dia para gratuito
+### Bot Principal (Ananda) - TG_TOKEN
+**Comandos Usuário:**
+- `/start`, `/help`, `/meditar`, `/orar`, `/versiculo`
+- `/pedido`, `/compartilhar`, `/meunome`
+- `/assinar`, `/meuplano`, `/premium`, `/vip`
 
-## Environment Variables Required
+**Comandos Admin:**
+- `/stats`, `/users`, `/online`, `/check`, `/msg`
+- `/historico`, `/ban`, `/unban`, `/resetwarn`
+- `/broadcast`, `/pedidos`, `/enviarversiculo`
+
+### Bot de Pagamentos - PAYMENT_BOT_TOKEN
+**Comandos Usuário:**
+- `/start`, `/menu` - Menu inicial
+- `/premium`, `/vip` - Assinaturas
+- `/meditacao`, `/pacote`, `/oracao` - Produtos
+- `/doar [valor]` - Doação
+- `/minhascompras`, `/meusaldo` - Conta
+
+**Comandos Admin:**
+- `/stats` - Estatísticas e receita
+- `/vendas` - Relatório de vendas
+- `/usuarios` - Lista de usuários
+
+## API Endpoints
+
+### Mercado Pago
+- `GET /api/mercadopago/public-key`
+- `GET /api/mercadopago/plans`
+- `GET /api/mercadopago/products`
+- `POST /api/mercadopago/checkout`
+- `POST /api/mercadopago/pix`
+- `GET /api/mercadopago/payment/{id}`
+- `POST /api/mercadopago/webhook`
+- `GET /api/mercadopago/payments`
+
+## Environment Variables
 ```
-# MongoDB
 MONGO_URL=mongodb://localhost:27017
 DB_NAME=test_database
-
-# Telegram
-TG_TOKEN=<seu_token_telegram>
+TG_TOKEN=<token_bot_ananda>
 ADMIN_ID=<seu_telegram_id>
-
-# Emergent LLM
-EMERGENT_LLM_KEY=<sua_key>
-
-# Mercado Pago
+EMERGENT_LLM_KEY=<key>
 MP_ACCESS_TOKEN=APP_USR-xxx
 MP_PUBLIC_KEY=APP_USR-xxx
-
-# URLs
+PAYMENT_BOT_TOKEN=8273296855:AAEFVbo3ADqgfhfgSvVaZ5OCyQfbaLRyofE
 REACT_APP_BACKEND_URL=https://seu-dominio.com
-REACT_APP_FRONTEND_URL=https://seu-dominio.com
 ```
 
-## Prioritized Backlog
+## What's Been Implemented (Feb 2026)
+- [x] Integração Mercado Pago completa
+- [x] Bot de Pagamentos separado
+- [x] Assinaturas Premium/VIP
+- [x] Produtos avulsos (meditação, oração)
+- [x] Doações voluntárias
+- [x] Histórico de compras
+- [x] Painel admin no bot de pagamentos
+- [x] Webhooks para ativação automática
+
+## Backlog
 
 ### P0 (Urgente)
-- [ ] Configurar TG_TOKEN e ADMIN_ID para bot funcionar
-- [ ] Configurar webhook URL no painel MP
+- [ ] Configurar TG_TOKEN para bot Ananda
+- [ ] Configurar ADMIN_ID
 
-### P1 (Próximos)
-- [ ] Painel de pagamentos no dashboard web
-- [ ] Renovação automática de assinatura
-- [ ] Notificação de expiração (3 dias antes)
+### P1 (Próximo)
+- [ ] Sistema de créditos (meditações/orações compradas)
+- [ ] Notificação push após pagamento aprovado
+- [ ] Painel web de pagamentos
 
 ### P2 (Futuro)
 - [ ] Cupons de desconto
 - [ ] Programa de indicação
-- [ ] Trial de 7 dias grátis
+- [ ] Relatórios exportáveis
