@@ -197,6 +197,184 @@ const PrayerCard = ({ request }) => (
   </div>
 );
 
+// Sales Stats Card Component
+const SalesStatsCard = ({ icon: Icon, title, value, subtitle, color, trend }) => (
+  <div 
+    data-testid={`sales-stats-${title.toLowerCase().replace(/\s+/g, '-')}`}
+    className="bg-white rounded-2xl border border-stone-100 shadow-sm p-6 relative overflow-hidden group hover:border-emerald-200/50 transition-all duration-500 hover:-translate-y-1"
+  >
+    <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-emerald-50 to-transparent rounded-bl-full opacity-60" />
+    <div className="relative z-10">
+      <div className={`w-12 h-12 rounded-xl ${color} flex items-center justify-center mb-4`}>
+        <Icon className="w-6 h-6 text-white" />
+      </div>
+      <p className="text-sm text-stone-400 tracking-wide uppercase font-medium">{title}</p>
+      <p className="text-3xl font-semibold text-stone-800 mt-1">
+        {value}
+      </p>
+      <div className="flex items-center justify-between mt-2">
+        {subtitle && <p className="text-sm text-stone-500">{subtitle}</p>}
+        {trend && (
+          <span className={`text-xs px-2 py-1 rounded-full flex items-center gap-1 ${
+            trend > 0 ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'
+          }`}>
+            <TrendingUp className={`w-3 h-3 ${trend < 0 ? 'rotate-180' : ''}`} />
+            {Math.abs(trend)}%
+          </span>
+        )}
+      </div>
+    </div>
+  </div>
+);
+
+// Payment Card Component
+const PaymentCard = ({ payment }) => {
+  const statusConfig = {
+    approved: { icon: CheckCircle, color: 'text-green-500', bg: 'bg-green-50', label: 'Aprovado' },
+    pending: { icon: AlertCircle, color: 'text-amber-500', bg: 'bg-amber-50', label: 'Pendente' },
+    rejected: { icon: XCircle, color: 'text-red-500', bg: 'bg-red-50', label: 'Rejeitado' },
+    failed: { icon: XCircle, color: 'text-red-500', bg: 'bg-red-50', label: 'Falhou' }
+  };
+  
+  const status = statusConfig[payment.status] || statusConfig.pending;
+  const StatusIcon = status.icon;
+  
+  const productLabels = {
+    premium: { icon: Star, label: 'Premium', color: 'text-yellow-600' },
+    vip: { icon: Crown, label: 'VIP', color: 'text-purple-600' },
+    meditacao: { icon: Sparkles, label: 'Meditação', color: 'text-blue-600' },
+    pacote_meditacao: { icon: Package, label: 'Pacote 10 Med.', color: 'text-indigo-600' },
+    oracao: { icon: Heart, label: 'Oração', color: 'text-rose-600' },
+    doacao: { icon: Gift, label: 'Doação', color: 'text-pink-600' }
+  };
+  
+  const product = productLabels[payment.product || payment.plan] || { icon: CreditCard, label: payment.product || payment.plan || 'N/A', color: 'text-stone-600' };
+  const ProductIcon = product.icon;
+  
+  return (
+    <div 
+      data-testid={`payment-card-${payment.id}`}
+      className="bg-white rounded-xl border border-stone-100 p-4 hover:shadow-md transition-all duration-300 hover:border-emerald-200/50"
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className={`w-10 h-10 rounded-full ${status.bg} flex items-center justify-center`}>
+            <StatusIcon className={`w-5 h-5 ${status.color}`} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <ProductIcon className={`w-4 h-4 ${product.color}`} />
+              <p className="font-medium text-stone-800">{product.label}</p>
+            </div>
+            <p className="text-sm text-stone-400">
+              ID: {payment.telegram_id?.slice(0, 8)}...
+            </p>
+          </div>
+        </div>
+        <div className="text-right">
+          <p className="font-semibold text-stone-800">
+            R$ {payment.amount?.toFixed(2) || '0.00'}
+          </p>
+          <p className="text-xs text-stone-400 flex items-center gap-1 justify-end">
+            <Clock className="w-3 h-3" />
+            {payment.created_at ? new Date(payment.created_at).toLocaleDateString('pt-BR') : 'N/A'}
+          </p>
+        </div>
+      </div>
+      <div className="mt-3 pt-3 border-t border-stone-100 flex items-center justify-between">
+        <span className={`px-2 py-1 rounded-full text-xs font-medium ${status.bg} ${status.color}`}>
+          {status.label}
+        </span>
+        {payment.payment_method && (
+          <span className="text-xs text-stone-400 flex items-center gap-1">
+            <CreditCard className="w-3 h-3" />
+            {payment.payment_method === 'pix' ? 'PIX' : 'Checkout'}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// Simple Line Chart Component (CSS-based)
+const SimpleLineChart = ({ data, label }) => {
+  if (!data || data.length === 0) return null;
+  
+  const maxValue = Math.max(...data.map(d => d.value), 1);
+  const points = data.map((d, i) => {
+    const x = (i / (data.length - 1)) * 100;
+    const y = 100 - (d.value / maxValue) * 100;
+    return `${x},${y}`;
+  }).join(' ');
+  
+  return (
+    <div className="bg-white rounded-2xl border border-stone-100 shadow-sm p-6">
+      <h3 className="text-lg font-medium text-stone-800 mb-4" style={{ fontFamily: 'Cormorant Garamond, serif' }}>
+        {label}
+      </h3>
+      <div className="relative h-48">
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full">
+          <defs>
+            <linearGradient id="chartGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="#10b981" stopOpacity="0.3" />
+              <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <polygon
+            points={`0,100 ${points} 100,100`}
+            fill="url(#chartGradient)"
+          />
+          <polyline
+            points={points}
+            fill="none"
+            stroke="#10b981"
+            strokeWidth="2"
+            vectorEffect="non-scaling-stroke"
+          />
+          {data.map((d, i) => {
+            const x = (i / (data.length - 1)) * 100;
+            const y = 100 - (d.value / maxValue) * 100;
+            return (
+              <circle
+                key={i}
+                cx={x}
+                cy={y}
+                r="3"
+                fill="#10b981"
+                vectorEffect="non-scaling-stroke"
+              />
+            );
+          })}
+        </svg>
+        <div className="absolute bottom-0 left-0 right-0 flex justify-between text-xs text-stone-400 mt-2">
+          {data.map((d, i) => (
+            <span key={i}>{d.label}</span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Top Buyers Component
+const TopBuyerCard = ({ buyer, index }) => (
+  <div className="flex items-center gap-3 p-3 rounded-xl hover:bg-stone-50 transition-all">
+    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+      index === 0 ? 'bg-yellow-100 text-yellow-700' :
+      index === 1 ? 'bg-stone-200 text-stone-600' :
+      index === 2 ? 'bg-amber-100 text-amber-700' :
+      'bg-stone-100 text-stone-500'
+    }`}>
+      {index + 1}
+    </div>
+    <div className="flex-1">
+      <p className="font-medium text-stone-700 text-sm">ID: {buyer.telegram_id?.slice(0, 10)}...</p>
+      <p className="text-xs text-stone-400">{buyer.count} compras</p>
+    </div>
+    <p className="font-semibold text-emerald-600">R$ {buyer.total?.toFixed(2)}</p>
+  </div>
+);
+
 // Main App
 function App() {
   const [stats, setStats] = useState(null);
