@@ -3149,10 +3149,31 @@ async def lifespan(app: FastAPI):
         payment_bot_app.add_handler(CommandHandler("minhascompras", payment_minhas_compras))
         payment_bot_app.add_handler(CommandHandler("meusaldo", payment_meu_saldo))
         
-        # Admin commands
+        # Admin basic commands
         payment_bot_app.add_handler(CommandHandler("stats", payment_stats_admin))
         payment_bot_app.add_handler(CommandHandler("vendas", payment_vendas_admin))
         payment_bot_app.add_handler(CommandHandler("usuarios", payment_usuarios_admin))
+        
+        # Advanced moderation commands
+        payment_bot_app.add_handler(CommandHandler("admin", pb_admin_help))
+        payment_bot_app.add_handler(CommandHandler("ban", pb_ban_user))
+        payment_bot_app.add_handler(CommandHandler("unban", pb_unban_user))
+        payment_bot_app.add_handler(CommandHandler("mute", pb_mute_user))
+        payment_bot_app.add_handler(CommandHandler("unmute", pb_unmute_user))
+        payment_bot_app.add_handler(CommandHandler("warn", pb_warn_user))
+        payment_bot_app.add_handler(CommandHandler("resetwarn", pb_reset_warnings))
+        payment_bot_app.add_handler(CommandHandler("info", pb_user_info))
+        payment_bot_app.add_handler(CommandHandler("antiflood", pb_antiflood_config))
+        payment_bot_app.add_handler(CommandHandler("antipalavroes", pb_antipalavroes_config))
+        payment_bot_app.add_handler(CommandHandler("autoban", pb_autoban_config))
+        payment_bot_app.add_handler(CommandHandler("banidos", pb_list_banned))
+        payment_bot_app.add_handler(CommandHandler("mutados", pb_list_muted))
+        payment_bot_app.add_handler(CommandHandler("logs", pb_moderation_logs))
+        payment_bot_app.add_handler(CommandHandler("broadcast", pb_broadcast))
+        payment_bot_app.add_handler(CommandHandler("dm", pb_dm_user))
+        
+        # Message handler for moderation (must be last)
+        payment_bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, pb_message_handler))
         
         await payment_bot_app.initialize()
         await payment_bot_app.start()
