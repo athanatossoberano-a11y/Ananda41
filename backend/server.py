@@ -42,18 +42,21 @@ PLANS = {
     "free": {
         "name": "Gratuito",
         "price": 0,
+        "price_brl": 0,
         "daily_messages": 10,
         "features": ["10 conversas/dia", "Comandos básicos"]
     },
     "premium": {
         "name": "Premium",
         "price": 200,  # 200 Stars ≈ R$ 19,90
+        "price_brl": 19.90,
         "daily_messages": -1,  # Unlimited
         "features": ["Conversas ilimitadas", "Meditações ilimitadas", "Orações personalizadas", "Prioridade nas respostas"]
     },
     "vip": {
         "name": "VIP",
         "price": 400,  # 400 Stars ≈ R$ 39,90
+        "price_brl": 39.90,
         "daily_messages": -1,  # Unlimited
         "features": ["Tudo do Premium", "Conteúdo exclusivo", "Atendimento prioritário", "Acesso antecipado a novidades"]
     }
