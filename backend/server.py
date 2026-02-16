@@ -2219,8 +2219,9 @@ async def payment_usuarios_admin(update: Update, context: ContextTypes.DEFAULT_T
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global telegram_app
+    global telegram_app, payment_bot_app
     
+    # Start main Ananda bot (if token provided)
     if TG_TOKEN:
         telegram_app = Application.builder().token(TG_TOKEN).build()
         
@@ -2270,12 +2271,53 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("TG_TOKEN not set. Telegram bot not started.")
     
+    # Start Payment Bot (separate bot)
+    if PAYMENT_BOT_TOKEN:
+        payment_bot_app = Application.builder().token(PAYMENT_BOT_TOKEN).build()
+        
+        # Payment bot commands
+        payment_bot_app.add_handler(CommandHandler("start", payment_start))
+        payment_bot_app.add_handler(CommandHandler("menu", payment_menu))
+        payment_bot_app.add_handler(CommandHandler("help", payment_menu))
+        
+        # Subscription commands
+        payment_bot_app.add_handler(CommandHandler("premium", payment_premium_mp))
+        payment_bot_app.add_handler(CommandHandler("vip", payment_vip_mp))
+        
+        # Product commands
+        payment_bot_app.add_handler(CommandHandler("meditacao", payment_meditacao))
+        payment_bot_app.add_handler(CommandHandler("pacote", payment_pacote))
+        payment_bot_app.add_handler(CommandHandler("oracao", payment_oracao))
+        payment_bot_app.add_handler(CommandHandler("doar", payment_doar))
+        
+        # User account commands
+        payment_bot_app.add_handler(CommandHandler("minhascompras", payment_minhas_compras))
+        payment_bot_app.add_handler(CommandHandler("meusaldo", payment_meu_saldo))
+        
+        # Admin commands
+        payment_bot_app.add_handler(CommandHandler("stats", payment_stats_admin))
+        payment_bot_app.add_handler(CommandHandler("vendas", payment_vendas_admin))
+        payment_bot_app.add_handler(CommandHandler("usuarios", payment_usuarios_admin))
+        
+        await payment_bot_app.initialize()
+        await payment_bot_app.start()
+        asyncio.create_task(payment_bot_app.updater.start_polling(allowed_updates=Update.ALL_TYPES))
+        logger.info("Payment Bot started successfully!")
+    else:
+        logger.warning("PAYMENT_BOT_TOKEN not set. Payment bot not started.")
+    
     yield
     
+    # Shutdown bots
     if telegram_app:
         await telegram_app.updater.stop()
         await telegram_app.stop()
         await telegram_app.shutdown()
+    
+    if payment_bot_app:
+        await payment_bot_app.updater.stop()
+        await payment_bot_app.stop()
+        await payment_bot_app.shutdown()
     
     client.close()
 
