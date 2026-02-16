@@ -2470,6 +2470,11 @@ async def get_mp_plans():
             }
     return {"plans": plans_response}
 
+@api_router.get("/mercadopago/products")
+async def get_mp_products():
+    """Return available individual products"""
+    return {"products": PRODUCTS}
+
 @api_router.post("/mercadopago/checkout")
 async def create_mp_checkout(request: MPPaymentRequest):
     """Create Mercado Pago Checkout Pro preference"""
