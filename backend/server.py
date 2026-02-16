@@ -2215,6 +2215,861 @@ async def payment_usuarios_admin(update: Update, context: ContextTypes.DEFAULT_T
     
     await update.message.reply_text(text, parse_mode='Markdown')
 
+# ============ ADVANCED MODERATION COMMANDS ============
+
+# Moderation settings storage
+moderation_settings = {
+    "antiflood_enabled": True,
+    "antiflood_limit": 5,
+    "antiflood_window": 10,
+    "antipalavroes_enabled": True,
+    "auto_ban_on_flood": False,
+    "mute_duration_default": 60  # minutes
+}
+
+# Flood tracking
+payment_bot_flood_tracker = {}
+
+# Extended bad words list
+PALAVROES_LIST = [
+    "porra", "caralho", "merda", "foda", "fodase", "foda-se", "puta", "putaria",
+    "buceta", "piroca", "rola", "pau", "cacete", "viado", "veado", "bicha",
+    "cuzão", "cu ", " cu", "bosta", "arrombado", "fdp", "pqp", "vsf", "tnc",
+    "vtnc", "krl", "puta que pariu", "filho da puta", "desgraça", "desgraçado",
+    "corno", "otário", "idiota", "imbecil", "babaca", "trouxa", "xereca",
+    "punheta", "gozar", "goza", "p0rra", "c4ralho", "put4", "buc3ta"
+]
+
+def check_palavroes(text: str) -> tuple[bool, str]:
+    """Check for bad words in text"""
+    text_lower = text.lower()
+    for word in PALAVROES_LIST:
+        if word in text_lower:
+            return True, word
+    return False, ""
+
+def check_payment_bot_flood(user_id: str) -> bool:
+    """Check if user is flooding the payment bot"""
+    if not moderation_settings["antiflood_enabled"]:
+        return False
+    
+    now = datetime.now(timezone.utc)
+    user_times = payment_bot_flood_tracker.get(user_id, [])
+    
+    # Remove old timestamps
+    window = moderation_settings["antiflood_window"]
+    payment_bot_flood_tracker[user_id] = [
+        t for t in user_times 
+        if (now - t).total_seconds() < window
+    ]
+    
+    # Add current timestamp
+    payment_bot_flood_tracker[user_id].append(now)
+    
+    # Check if over limit
+    return len(payment_bot_flood_tracker[user_id]) > moderation_settings["antiflood_limit"]
+
+async def pb_admin_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show admin help"""
+    user = update.effective_user
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("❌ Comando apenas para administradores.")
+        return
+    
+    text = (
+        "🛡️ *Comandos de Administração*\n\n"
+        "👤 *Gerenciamento de Usuários:*\n"
+        "/ban [ID] [motivo] - Banir usuário\n"
+        "/unban [ID] - Desbanir usuário\n"
+        "/mute [ID] [minutos] - Silenciar usuário\n"
+        "/unmute [ID] - Remover silêncio\n"
+        "/warn [ID] [motivo] - Advertir usuário\n"
+        "/resetwarn [ID] - Zerar advertências\n"
+        "/kick [ID] - Expulsar (pode voltar)\n"
+        "/info [ID] - Info completa do usuário\n\n"
+        "🛡️ *Moderação Automática:*\n"
+        "/antiflood [on/off] - Liga/desliga antiflood\n"
+        "/antiflood config [msgs] [segundos] - Configurar\n"
+        "/antipalavroes [on/off] - Filtro de palavrões\n"
+        "/autoban [on/off] - Ban automático por flood\n\n"
+        "📊 *Relatórios:*\n"
+        "/stats - Estatísticas gerais\n"
+        "/vendas - Relatório de vendas\n"
+        "/usuarios - Lista de usuários\n"
+        "/banidos - Lista de banidos\n"
+        "/mutados - Lista de silenciados\n"
+        "/logs [qtd] - Últimos logs de moderação\n\n"
+        "📢 *Comunicação:*\n"
+        "/broadcast [msg] - Enviar para todos\n"
+        "/dm [ID] [msg] - Mensagem direta"
+    )
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+async def pb_ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ban a user"""
+    user = update.effective_user
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("❌ Comando apenas para administradores.")
+        return
+    
+    if not context.args:
+        await update.message.reply_text(
+            "🚫 *Como banir:*\n"
+            "/ban [ID] [motivo]\n\n"
+            "Exemplo: /ban 123456789 Spam",
+            parse_mode='Markdown'
+        )
+        return
+    
+    target_id = context.args[0]
+    reason = " ".join(context.args[1:]) if len(context.args) > 1 else "Não especificado"
+    
+    if target_id == str(ADMIN_ID):
+        await update.message.reply_text("❌ Você não pode se banir.")
+        return
+    
+    now = datetime.now(timezone.utc)
+    
+    # Update user as banned
+    result = await db.users.update_one(
+        {"telegram_id": target_id},
+        {
+            "$set": {
+                "is_banned": True,
+                "ban_reason": reason,
+                "banned_at": now.isoformat(),
+                "banned_by": str(user.id)
+            }
+        }
+    )
+    
+    # Log moderation action
+    await db.moderation_logs.insert_one({
+        "id": str(uuid.uuid4()),
+        "action": "ban",
+        "target_id": target_id,
+        "admin_id": str(user.id),
+        "reason": reason,
+        "timestamp": now.isoformat()
+    })
+    
+    if result.modified_count > 0:
+        await update.message.reply_text(
+            f"🚫 *Usuário Banido*\n\n"
+            f"ID: `{target_id}`\n"
+            f"Motivo: {reason}\n"
+            f"Por: Admin",
+            parse_mode='Markdown'
+        )
+        
+        # Try to notify the banned user
+        if payment_bot_app:
+            try:
+                await payment_bot_app.bot.send_message(
+                    chat_id=int(target_id),
+                    text=f"🚫 *Você foi banido*\n\nMotivo: {reason}\n\nEntre em contato com o suporte se acredita que foi um erro.",
+                    parse_mode='Markdown'
+                )
+            except:
+                pass
+    else:
+        await update.message.reply_text(f"❌ Usuário `{target_id}` não encontrado.", parse_mode='Markdown')
+
+async def pb_unban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Unban a user"""
+    user = update.effective_user
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("❌ Comando apenas para administradores.")
+        return
+    
+    if not context.args:
+        await update.message.reply_text("Uso: /unban [ID]")
+        return
+    
+    target_id = context.args[0]
+    now = datetime.now(timezone.utc)
+    
+    result = await db.users.update_one(
+        {"telegram_id": target_id},
+        {
+            "$set": {"is_banned": False},
+            "$unset": {"ban_reason": "", "banned_at": "", "banned_by": ""}
+        }
+    )
+    
+    # Log action
+    await db.moderation_logs.insert_one({
+        "id": str(uuid.uuid4()),
+        "action": "unban",
+        "target_id": target_id,
+        "admin_id": str(user.id),
+        "timestamp": now.isoformat()
+    })
+    
+    if result.modified_count > 0:
+        await update.message.reply_text(f"✅ Usuário `{target_id}` foi desbanido.", parse_mode='Markdown')
+        
+        # Notify user
+        if payment_bot_app:
+            try:
+                await payment_bot_app.bot.send_message(
+                    chat_id=int(target_id),
+                    text="✅ *Você foi desbanido!*\n\nSeja bem-vindo de volta. Por favor, siga as regras.",
+                    parse_mode='Markdown'
+                )
+            except:
+                pass
+    else:
+        await update.message.reply_text(f"❌ Usuário `{target_id}` não encontrado.", parse_mode='Markdown')
+
+async def pb_mute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mute a user for specified duration"""
+    user = update.effective_user
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("❌ Comando apenas para administradores.")
+        return
+    
+    if not context.args:
+        await update.message.reply_text(
+            "🔇 *Como silenciar:*\n"
+            "/mute [ID] [minutos]\n\n"
+            "Exemplo: /mute 123456789 60\n"
+            "Padrão: 60 minutos",
+            parse_mode='Markdown'
+        )
+        return
+    
+    target_id = context.args[0]
+    duration = int(context.args[1]) if len(context.args) > 1 else moderation_settings["mute_duration_default"]
+    
+    if target_id == str(ADMIN_ID):
+        await update.message.reply_text("❌ Você não pode se silenciar.")
+        return
+    
+    now = datetime.now(timezone.utc)
+    unmute_at = now + timedelta(minutes=duration)
+    
+    result = await db.users.update_one(
+        {"telegram_id": target_id},
+        {
+            "$set": {
+                "is_muted": True,
+                "muted_until": unmute_at.isoformat(),
+                "muted_by": str(user.id)
+            }
+        }
+    )
+    
+    # Log action
+    await db.moderation_logs.insert_one({
+        "id": str(uuid.uuid4()),
+        "action": "mute",
+        "target_id": target_id,
+        "admin_id": str(user.id),
+        "duration": duration,
+        "timestamp": now.isoformat()
+    })
+    
+    if result.modified_count > 0:
+        await update.message.reply_text(
+            f"🔇 *Usuário Silenciado*\n\n"
+            f"ID: `{target_id}`\n"
+            f"Duração: {duration} minutos\n"
+            f"Até: {unmute_at.strftime('%d/%m %H:%M')} UTC",
+            parse_mode='Markdown'
+        )
+        
+        if payment_bot_app:
+            try:
+                await payment_bot_app.bot.send_message(
+                    chat_id=int(target_id),
+                    text=f"🔇 *Você foi silenciado*\n\nDuração: {duration} minutos\n\nVocê pode usar o bot novamente após esse período.",
+                    parse_mode='Markdown'
+                )
+            except:
+                pass
+    else:
+        await update.message.reply_text(f"❌ Usuário `{target_id}` não encontrado.", parse_mode='Markdown')
+
+async def pb_unmute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Unmute a user"""
+    user = update.effective_user
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("❌ Comando apenas para administradores.")
+        return
+    
+    if not context.args:
+        await update.message.reply_text("Uso: /unmute [ID]")
+        return
+    
+    target_id = context.args[0]
+    now = datetime.now(timezone.utc)
+    
+    result = await db.users.update_one(
+        {"telegram_id": target_id},
+        {
+            "$set": {"is_muted": False},
+            "$unset": {"muted_until": "", "muted_by": ""}
+        }
+    )
+    
+    await db.moderation_logs.insert_one({
+        "id": str(uuid.uuid4()),
+        "action": "unmute",
+        "target_id": target_id,
+        "admin_id": str(user.id),
+        "timestamp": now.isoformat()
+    })
+    
+    if result.modified_count > 0:
+        await update.message.reply_text(f"🔊 Usuário `{target_id}` pode falar novamente.", parse_mode='Markdown')
+        
+        if payment_bot_app:
+            try:
+                await payment_bot_app.bot.send_message(
+                    chat_id=int(target_id),
+                    text="🔊 *Você foi desmutado!*\n\nVocê pode usar o bot normalmente.",
+                    parse_mode='Markdown'
+                )
+            except:
+                pass
+    else:
+        await update.message.reply_text(f"❌ Usuário `{target_id}` não encontrado.", parse_mode='Markdown')
+
+async def pb_warn_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Warn a user"""
+    user = update.effective_user
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("❌ Comando apenas para administradores.")
+        return
+    
+    if not context.args:
+        await update.message.reply_text(
+            "⚠️ *Como advertir:*\n"
+            "/warn [ID] [motivo]\n\n"
+            "3 advertências = ban automático",
+            parse_mode='Markdown'
+        )
+        return
+    
+    target_id = context.args[0]
+    reason = " ".join(context.args[1:]) if len(context.args) > 1 else "Comportamento inadequado"
+    now = datetime.now(timezone.utc)
+    
+    # Get current warnings
+    user_doc = await db.users.find_one({"telegram_id": target_id})
+    if not user_doc:
+        await update.message.reply_text(f"❌ Usuário `{target_id}` não encontrado.", parse_mode='Markdown')
+        return
+    
+    warnings = user_doc.get("warnings", 0) + 1
+    
+    # Update warnings
+    update_data = {"warnings": warnings}
+    
+    # Auto-ban on 3 warnings
+    if warnings >= 3:
+        update_data["is_banned"] = True
+        update_data["ban_reason"] = "3 advertências atingidas"
+        update_data["banned_at"] = now.isoformat()
+    
+    await db.users.update_one(
+        {"telegram_id": target_id},
+        {"$set": update_data}
+    )
+    
+    await db.moderation_logs.insert_one({
+        "id": str(uuid.uuid4()),
+        "action": "warn",
+        "target_id": target_id,
+        "admin_id": str(user.id),
+        "reason": reason,
+        "warning_count": warnings,
+        "timestamp": now.isoformat()
+    })
+    
+    if warnings >= 3:
+        await update.message.reply_text(
+            f"🚫 *Usuário Banido Automaticamente*\n\n"
+            f"ID: `{target_id}`\n"
+            f"Motivo: 3 advertências atingidas\n"
+            f"Última advertência: {reason}",
+            parse_mode='Markdown'
+        )
+    else:
+        await update.message.reply_text(
+            f"⚠️ *Advertência {warnings}/3*\n\n"
+            f"ID: `{target_id}`\n"
+            f"Motivo: {reason}",
+            parse_mode='Markdown'
+        )
+    
+    if payment_bot_app:
+        try:
+            if warnings >= 3:
+                msg = f"🚫 *Você foi banido*\n\n3 advertências atingidas.\nÚltimo motivo: {reason}"
+            else:
+                msg = f"⚠️ *Advertência {warnings}/3*\n\nMotivo: {reason}\n\n⚠️ Com 3 advertências você será banido automaticamente."
+            await payment_bot_app.bot.send_message(chat_id=int(target_id), text=msg, parse_mode='Markdown')
+        except:
+            pass
+
+async def pb_reset_warnings(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Reset user warnings"""
+    user = update.effective_user
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("❌ Comando apenas para administradores.")
+        return
+    
+    if not context.args:
+        await update.message.reply_text("Uso: /resetwarn [ID]")
+        return
+    
+    target_id = context.args[0]
+    
+    result = await db.users.update_one(
+        {"telegram_id": target_id},
+        {"$set": {"warnings": 0}}
+    )
+    
+    if result.modified_count > 0:
+        await update.message.reply_text(f"✅ Advertências de `{target_id}` foram zeradas.", parse_mode='Markdown')
+    else:
+        await update.message.reply_text(f"❌ Usuário não encontrado.", parse_mode='Markdown')
+
+async def pb_user_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Get detailed user info"""
+    user = update.effective_user
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("❌ Comando apenas para administradores.")
+        return
+    
+    if not context.args:
+        await update.message.reply_text("Uso: /info [ID]")
+        return
+    
+    target_id = context.args[0]
+    
+    user_doc = await db.users.find_one({"telegram_id": target_id}, {"_id": 0})
+    if not user_doc:
+        await update.message.reply_text(f"❌ Usuário `{target_id}` não encontrado.", parse_mode='Markdown')
+        return
+    
+    # Get subscription
+    sub = await get_user_subscription(target_id)
+    plan = PLANS.get(sub.get("plan", "free"), PLANS["free"])
+    
+    # Get payment count
+    payments = await db.mp_payments.count_documents({"telegram_id": target_id, "status": "approved"})
+    
+    # Calculate total spent
+    pipeline = [
+        {"$match": {"telegram_id": target_id, "status": "approved"}},
+        {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
+    ]
+    spent_result = await db.mp_payments.aggregate(pipeline).to_list(1)
+    total_spent = spent_result[0]["total"] if spent_result else 0
+    
+    # Status icons
+    ban_status = "🚫 Banido" if user_doc.get("is_banned") else "✅ Ativo"
+    mute_status = "🔇 Mutado" if user_doc.get("is_muted") else "🔊 Normal"
+    
+    text = (
+        f"👤 *Informações do Usuário*\n\n"
+        f"📛 *Nome:* {user_doc.get('name', 'N/A')}\n"
+        f"🆔 *ID:* `{target_id}`\n"
+        f"👤 *Username:* @{user_doc.get('username', 'N/A')}\n\n"
+        f"📊 *Status:*\n"
+        f"• {ban_status}\n"
+        f"• {mute_status}\n"
+        f"• ⚠️ Advertências: {user_doc.get('warnings', 0)}/3\n\n"
+        f"💳 *Financeiro:*\n"
+        f"• ⭐ Plano: {plan['name']}\n"
+        f"• 💰 Total gasto: R$ {total_spent:.2f}\n"
+        f"• 🧾 Pagamentos: {payments}\n\n"
+        f"📅 *Datas:*\n"
+        f"• Criado: {user_doc.get('created_at', 'N/A')[:10]}\n"
+        f"• Último acesso: {user_doc.get('last_seen', 'N/A')[:16]}"
+    )
+    
+    if user_doc.get("is_banned"):
+        text += f"\n\n🚫 *Banimento:*\n"
+        text += f"• Motivo: {user_doc.get('ban_reason', 'N/A')}\n"
+        text += f"• Data: {user_doc.get('banned_at', 'N/A')[:10]}"
+    
+    if user_doc.get("is_muted"):
+        text += f"\n\n🔇 *Mute:*\n"
+        text += f"• Até: {user_doc.get('muted_until', 'N/A')[:16]}"
+    
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+async def pb_antiflood_config(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Configure antiflood settings"""
+    user = update.effective_user
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("❌ Comando apenas para administradores.")
+        return
+    
+    if not context.args:
+        status = "🟢 Ligado" if moderation_settings["antiflood_enabled"] else "🔴 Desligado"
+        await update.message.reply_text(
+            f"🛡️ *Configuração AntiFlood*\n\n"
+            f"Status: {status}\n"
+            f"Limite: {moderation_settings['antiflood_limit']} msgs\n"
+            f"Janela: {moderation_settings['antiflood_window']} segundos\n"
+            f"Auto-ban: {'🟢 Sim' if moderation_settings['auto_ban_on_flood'] else '🔴 Não'}\n\n"
+            f"*Comandos:*\n"
+            f"/antiflood on - Ligar\n"
+            f"/antiflood off - Desligar\n"
+            f"/antiflood config [msgs] [segundos]\n"
+            f"Exemplo: /antiflood config 5 10",
+            parse_mode='Markdown'
+        )
+        return
+    
+    action = context.args[0].lower()
+    
+    if action == "on":
+        moderation_settings["antiflood_enabled"] = True
+        await update.message.reply_text("🛡️ AntiFlood *ATIVADO*", parse_mode='Markdown')
+    elif action == "off":
+        moderation_settings["antiflood_enabled"] = False
+        await update.message.reply_text("🛡️ AntiFlood *DESATIVADO*", parse_mode='Markdown')
+    elif action == "config" and len(context.args) >= 3:
+        try:
+            limit = int(context.args[1])
+            window = int(context.args[2])
+            moderation_settings["antiflood_limit"] = limit
+            moderation_settings["antiflood_window"] = window
+            await update.message.reply_text(
+                f"✅ AntiFlood configurado:\n"
+                f"Limite: {limit} mensagens\n"
+                f"Janela: {window} segundos",
+                parse_mode='Markdown'
+            )
+        except ValueError:
+            await update.message.reply_text("❌ Use números válidos.")
+    else:
+        await update.message.reply_text("❌ Comando inválido. Use /antiflood para ver opções.")
+
+async def pb_antipalavroes_config(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Configure bad words filter"""
+    user = update.effective_user
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("❌ Comando apenas para administradores.")
+        return
+    
+    if not context.args:
+        status = "🟢 Ligado" if moderation_settings["antipalavroes_enabled"] else "🔴 Desligado"
+        await update.message.reply_text(
+            f"🤬 *Filtro de Palavrões*\n\n"
+            f"Status: {status}\n"
+            f"Palavras bloqueadas: {len(PALAVROES_LIST)}\n\n"
+            f"/antipalavroes on - Ligar\n"
+            f"/antipalavroes off - Desligar",
+            parse_mode='Markdown'
+        )
+        return
+    
+    action = context.args[0].lower()
+    
+    if action == "on":
+        moderation_settings["antipalavroes_enabled"] = True
+        await update.message.reply_text("🤬 Filtro de palavrões *ATIVADO*", parse_mode='Markdown')
+    elif action == "off":
+        moderation_settings["antipalavroes_enabled"] = False
+        await update.message.reply_text("🤬 Filtro de palavrões *DESATIVADO*", parse_mode='Markdown')
+
+async def pb_autoban_config(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Configure auto-ban on flood"""
+    user = update.effective_user
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("❌ Comando apenas para administradores.")
+        return
+    
+    if not context.args:
+        status = "🟢 Ligado" if moderation_settings["auto_ban_on_flood"] else "🔴 Desligado"
+        await update.message.reply_text(
+            f"⚡ *Auto-Ban por Flood*\n\n"
+            f"Status: {status}\n\n"
+            f"/autoban on - Ligar\n"
+            f"/autoban off - Desligar",
+            parse_mode='Markdown'
+        )
+        return
+    
+    action = context.args[0].lower()
+    
+    if action == "on":
+        moderation_settings["auto_ban_on_flood"] = True
+        await update.message.reply_text("⚡ Auto-ban por flood *ATIVADO*", parse_mode='Markdown')
+    elif action == "off":
+        moderation_settings["auto_ban_on_flood"] = False
+        await update.message.reply_text("⚡ Auto-ban por flood *DESATIVADO*", parse_mode='Markdown')
+
+async def pb_list_banned(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """List banned users"""
+    user = update.effective_user
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("❌ Comando apenas para administradores.")
+        return
+    
+    banned = await db.users.find({"is_banned": True}, {"_id": 0}).to_list(50)
+    
+    if not banned:
+        await update.message.reply_text("✅ Nenhum usuário banido.")
+        return
+    
+    text = f"🚫 *Usuários Banidos ({len(banned)})*\n\n"
+    for u in banned:
+        name = u.get("name", "N/A")[:12]
+        tg_id = u.get("telegram_id")
+        reason = u.get("ban_reason", "N/A")[:20]
+        text += f"• `{tg_id}` - {name}\n  Motivo: {reason}\n"
+    
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+async def pb_list_muted(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """List muted users"""
+    user = update.effective_user
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("❌ Comando apenas para administradores.")
+        return
+    
+    muted = await db.users.find({"is_muted": True}, {"_id": 0}).to_list(50)
+    
+    if not muted:
+        await update.message.reply_text("✅ Nenhum usuário silenciado.")
+        return
+    
+    text = f"🔇 *Usuários Silenciados ({len(muted)})*\n\n"
+    for u in muted:
+        name = u.get("name", "N/A")[:12]
+        tg_id = u.get("telegram_id")
+        until = u.get("muted_until", "N/A")[:16]
+        text += f"• `{tg_id}` - {name}\n  Até: {until}\n"
+    
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+async def pb_moderation_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show moderation logs"""
+    user = update.effective_user
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("❌ Comando apenas para administradores.")
+        return
+    
+    limit = int(context.args[0]) if context.args else 10
+    limit = min(limit, 50)
+    
+    logs = await db.moderation_logs.find({}, {"_id": 0}).sort("timestamp", -1).to_list(limit)
+    
+    if not logs:
+        await update.message.reply_text("📋 Nenhum log de moderação.")
+        return
+    
+    text = f"📋 *Últimos {len(logs)} Logs de Moderação*\n\n"
+    
+    action_icons = {
+        "ban": "🚫",
+        "unban": "✅",
+        "mute": "🔇",
+        "unmute": "🔊",
+        "warn": "⚠️",
+        "kick": "👢"
+    }
+    
+    for log in logs:
+        icon = action_icons.get(log.get("action"), "📝")
+        time = log.get("timestamp", "")[:16].replace("T", " ")
+        action = log.get("action", "N/A")
+        target = log.get("target_id", "N/A")
+        
+        text += f"{icon} {action.upper()} - `{target}`\n   {time}\n"
+    
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+async def pb_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Broadcast message to all users"""
+    user = update.effective_user
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("❌ Comando apenas para administradores.")
+        return
+    
+    if not context.args:
+        await update.message.reply_text("Uso: /broadcast [mensagem]")
+        return
+    
+    message = " ".join(context.args)
+    
+    await update.message.reply_text("📤 Enviando broadcast...")
+    
+    users = await db.users.find({"is_banned": {"$ne": True}}, {"_id": 0, "telegram_id": 1}).to_list(1000)
+    success = 0
+    failed = 0
+    
+    for u in users:
+        try:
+            await payment_bot_app.bot.send_message(
+                chat_id=int(u["telegram_id"]),
+                text=f"📢 *Mensagem da Administração:*\n\n{message}",
+                parse_mode='Markdown'
+            )
+            success += 1
+        except:
+            failed += 1
+    
+    await update.message.reply_text(
+        f"✅ *Broadcast Concluído*\n\n"
+        f"Enviados: {success}\n"
+        f"Falhas: {failed}",
+        parse_mode='Markdown'
+    )
+
+async def pb_dm_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send direct message to user"""
+    user = update.effective_user
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("❌ Comando apenas para administradores.")
+        return
+    
+    if len(context.args) < 2:
+        await update.message.reply_text("Uso: /dm [ID] [mensagem]")
+        return
+    
+    target_id = context.args[0]
+    message = " ".join(context.args[1:])
+    
+    try:
+        await payment_bot_app.bot.send_message(
+            chat_id=int(target_id),
+            text=f"💬 *Mensagem do Suporte:*\n\n{message}",
+            parse_mode='Markdown'
+        )
+        await update.message.reply_text(f"✅ Mensagem enviada para `{target_id}`", parse_mode='Markdown')
+    except Exception as e:
+        await update.message.reply_text(f"❌ Erro ao enviar: {e}")
+
+async def pb_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle all messages in payment bot with moderation"""
+    if not update.message or not update.message.text:
+        return
+    
+    user = update.effective_user
+    user_id = str(user.id)
+    text = update.message.text
+    
+    # Skip admin
+    if user.id == ADMIN_ID:
+        return
+    
+    # Check if user exists, create if not
+    user_doc = await db.users.find_one({"telegram_id": user_id})
+    if not user_doc:
+        await db.users.insert_one({
+            "id": str(uuid.uuid4()),
+            "telegram_id": user_id,
+            "name": user.full_name,
+            "username": user.username,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "last_seen": datetime.now(timezone.utc).isoformat(),
+            "is_banned": False,
+            "is_muted": False,
+            "warnings": 0
+        })
+        user_doc = {"is_banned": False, "is_muted": False}
+    
+    # Check if banned
+    if user_doc.get("is_banned"):
+        await update.message.reply_text("🚫 Você está banido e não pode usar este bot.")
+        return
+    
+    # Check if muted
+    if user_doc.get("is_muted"):
+        muted_until = user_doc.get("muted_until", "")
+        if muted_until:
+            try:
+                mute_end = datetime.fromisoformat(muted_until.replace('Z', '+00:00'))
+                if datetime.now(timezone.utc) < mute_end:
+                    remaining = (mute_end - datetime.now(timezone.utc)).total_seconds() // 60
+                    await update.message.reply_text(f"🔇 Você está silenciado. Aguarde {int(remaining)} minutos.")
+                    return
+                else:
+                    # Auto-unmute
+                    await db.users.update_one(
+                        {"telegram_id": user_id},
+                        {"$set": {"is_muted": False}, "$unset": {"muted_until": "", "muted_by": ""}}
+                    )
+            except:
+                pass
+    
+    # Check antiflood
+    if moderation_settings["antiflood_enabled"]:
+        if check_payment_bot_flood(user_id):
+            if moderation_settings["auto_ban_on_flood"]:
+                await db.users.update_one(
+                    {"telegram_id": user_id},
+                    {"$set": {"is_banned": True, "ban_reason": "Flood automático"}}
+                )
+                await update.message.reply_text("🚫 Você foi banido por flood.")
+                
+                # Notify admin
+                await payment_bot_app.bot.send_message(
+                    chat_id=ADMIN_ID,
+                    text=f"🚨 *Auto-Ban por Flood*\n\nUsuário: `{user_id}` - {user.full_name}",
+                    parse_mode='Markdown'
+                )
+            else:
+                await update.message.reply_text("⚠️ Calma! Você está enviando mensagens muito rápido.")
+            return
+    
+    # Check bad words
+    if moderation_settings["antipalavroes_enabled"]:
+        has_bad_word, word = check_palavroes(text)
+        if has_bad_word:
+            # Auto-warn
+            warnings = user_doc.get("warnings", 0) + 1
+            
+            if warnings >= 3:
+                await db.users.update_one(
+                    {"telegram_id": user_id},
+                    {"$set": {"is_banned": True, "ban_reason": "Palavrões (3 advertências)", "warnings": warnings}}
+                )
+                await update.message.reply_text("🚫 Você foi banido por uso repetido de palavrões.")
+            else:
+                await db.users.update_one(
+                    {"telegram_id": user_id},
+                    {"$set": {"warnings": warnings}}
+                )
+                await update.message.reply_text(
+                    f"⚠️ *Advertência {warnings}/3*\n\n"
+                    f"Linguagem inadequada não é permitida aqui.",
+                    parse_mode='Markdown'
+                )
+            
+            # Log
+            await db.moderation_logs.insert_one({
+                "id": str(uuid.uuid4()),
+                "action": "auto_warn_palavrao",
+                "target_id": user_id,
+                "admin_id": "system",
+                "reason": f"Palavra: {word}",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+            
+            # Notify admin
+            await payment_bot_app.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=f"🤬 *Palavrão Detectado*\n\nUsuário: `{user_id}` - {user.full_name}\nPalavra: ||{word}||\nAdvertências: {warnings}/3",
+                parse_mode='MarkdownV2'
+            )
+            return
+    
+    # Update last seen
+    await db.users.update_one(
+        {"telegram_id": user_id},
+        {"$set": {"last_seen": datetime.now(timezone.utc).isoformat()}}
+    )
+
 # ============ FASTAPI APP ============
 
 @asynccontextmanager
