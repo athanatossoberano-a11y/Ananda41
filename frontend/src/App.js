@@ -382,20 +382,24 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [learnings, setLearnings] = useState([]);
   const [prayerRequests, setPrayerRequests] = useState([]);
+  const [payments, setPayments] = useState([]);
+  const [salesStats, setSalesStats] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [broadcastMessage, setBroadcastMessage] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [paymentFilter, setPaymentFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [broadcastStatus, setBroadcastStatus] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {
-      const [statsRes, usersRes, messagesRes, learningsRes, prayersRes] = await Promise.all([
+      const [statsRes, usersRes, messagesRes, learningsRes, prayersRes, paymentsRes] = await Promise.all([
         axios.get(`${API}/stats`),
         axios.get(`${API}/users`),
         axios.get(`${API}/messages?limit=50`),
         axios.get(`${API}/learnings`),
-        axios.get(`${API}/prayer-requests`)
+        axios.get(`${API}/prayer-requests`),
+        axios.get(`${API}/mercadopago/payments`).catch(() => ({ data: { payments: [] } }))
       ]);
       
       setStats(statsRes.data);
@@ -403,6 +407,78 @@ function App() {
       setMessages(messagesRes.data.messages || []);
       setLearnings(learningsRes.data.learnings || []);
       setPrayerRequests(prayersRes.data.requests || []);
+      setPayments(paymentsRes.data.payments || []);
+      
+      // Calculate sales stats
+      const allPayments = paymentsRes.data.payments || [];
+      const approvedPayments = allPayments.filter(p => p.status === 'approved');
+      const totalRevenue = approvedPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+      
+      // Today's revenue
+      const today = new Date().toISOString().slice(0, 10);
+      const todayPayments = approvedPayments.filter(p => p.created_at?.startsWith(today));
+      const todayRevenue = todayPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+      
+      // This week's revenue
+      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const weekPayments = approvedPayments.filter(p => p.created_at >= weekAgo);
+      const weekRevenue = weekPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+      
+      // This month's revenue
+      const monthStart = new Date().toISOString().slice(0, 7);
+      const monthPayments = approvedPayments.filter(p => p.created_at?.startsWith(monthStart));
+      const monthRevenue = monthPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+      
+      // Products breakdown
+      const productBreakdown = {};
+      approvedPayments.forEach(p => {
+        const product = p.product || p.plan || 'other';
+        if (!productBreakdown[product]) {
+          productBreakdown[product] = { count: 0, total: 0 };
+        }
+        productBreakdown[product].count++;
+        productBreakdown[product].total += p.amount || 0;
+      });
+      
+      // Top buyers
+      const buyerStats = {};
+      approvedPayments.forEach(p => {
+        const id = p.telegram_id;
+        if (!buyerStats[id]) {
+          buyerStats[id] = { telegram_id: id, count: 0, total: 0 };
+        }
+        buyerStats[id].count++;
+        buyerStats[id].total += p.amount || 0;
+      });
+      const topBuyers = Object.values(buyerStats)
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 5);
+      
+      // Daily revenue for chart (last 7 days)
+      const dailyRevenue = [];
+      for (let i = 6; i >= 0; i--) {
+        const date = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+        const dateStr = date.toISOString().slice(0, 10);
+        const dayPayments = approvedPayments.filter(p => p.created_at?.startsWith(dateStr));
+        const dayTotal = dayPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+        dailyRevenue.push({
+          label: date.toLocaleDateString('pt-BR', { weekday: 'short' }),
+          value: dayTotal
+        });
+      }
+      
+      setSalesStats({
+        totalRevenue,
+        todayRevenue,
+        weekRevenue,
+        monthRevenue,
+        totalTransactions: approvedPayments.length,
+        pendingTransactions: allPayments.filter(p => p.status === 'pending').length,
+        productBreakdown,
+        topBuyers,
+        dailyRevenue
+      });
+      
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
