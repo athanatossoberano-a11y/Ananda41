@@ -574,6 +574,7 @@ function App() {
           <div className="flex gap-1 overflow-x-auto">
             {[
               { id: 'dashboard', label: 'Dashboard', icon: Activity },
+              { id: 'sales', label: 'Vendas', icon: DollarSign },
               { id: 'users', label: 'Usuários', icon: Users },
               { id: 'messages', label: 'Mensagens', icon: MessageCircle },
               { id: 'prayers', label: 'Pedidos', icon: HandHeart },
