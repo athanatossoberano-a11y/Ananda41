@@ -18,7 +18,20 @@ import {
   Heart,
   HandHeart,
   Star,
-  Crown
+  Crown,
+  DollarSign,
+  TrendingUp,
+  CreditCard,
+  Package,
+  Gift,
+  Calendar,
+  Filter,
+  Download,
+  ChevronDown,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  Wallet
 } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
