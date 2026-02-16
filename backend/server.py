@@ -1784,6 +1784,346 @@ async def get_prayer_requests():
     requests = await db.prayer_requests.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
     return {"requests": requests}
 
+# ============ MERCADO PAGO ENDPOINTS ============
+
+@api_router.get("/mercadopago/public-key")
+async def get_mp_public_key():
+    """Return the Mercado Pago public key for frontend"""
+    return {"public_key": MP_PUBLIC_KEY}
+
+@api_router.get("/mercadopago/plans")
+async def get_mp_plans():
+    """Return available plans with prices"""
+    plans_response = {}
+    for plan_id, plan in PLANS.items():
+        if plan_id != "free":
+            plans_response[plan_id] = {
+                "name": plan["name"],
+                "price_brl": plan["price_brl"],
+                "price_stars": plan["price"],
+                "features": plan["features"]
+            }
+    return {"plans": plans_response}
+
+@api_router.post("/mercadopago/checkout")
+async def create_mp_checkout(request: MPPaymentRequest):
+    """Create Mercado Pago Checkout Pro preference"""
+    if not mp_sdk:
+        raise HTTPException(status_code=503, detail="Mercado Pago não configurado")
+    
+    plan = PLANS.get(request.plan)
+    if not plan or request.plan == "free":
+        raise HTTPException(status_code=400, detail="Plano inválido")
+    
+    # Get the backend URL for callbacks
+    backend_url = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8001")
+    
+    preference_data = {
+        "items": [
+            {
+                "id": f"ananda_{request.plan}",
+                "title": f"Ananda {plan['name']} - 30 dias",
+                "description": f"Assinatura {plan['name']} do bot Ananda por 30 dias. {', '.join(plan['features'])}",
+                "category_id": "services",
+                "quantity": 1,
+                "currency_id": "BRL",
+                "unit_price": plan["price_brl"]
+            }
+        ],
+        "payer": {
+            "name": request.user_name or "Usuário Ananda",
+            "email": request.email or "user@ananda.bot"
+        },
+        "back_urls": {
+            "success": f"{backend_url}/api/mercadopago/success",
+            "failure": f"{backend_url}/api/mercadopago/failure",
+            "pending": f"{backend_url}/api/mercadopago/pending"
+        },
+        "auto_return": "approved",
+        "external_reference": f"{request.telegram_id}|{request.plan}|{datetime.now(timezone.utc).timestamp()}",
+        "notification_url": f"{backend_url}/api/mercadopago/webhook",
+        "statement_descriptor": "ANANDA BOT",
+        "expires": True,
+        "expiration_date_from": datetime.now(timezone.utc).isoformat(),
+        "expiration_date_to": (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+    }
+    
+    try:
+        preference_response = mp_sdk.preference().create(preference_data)
+        
+        if preference_response["status"] == 201:
+            preference = preference_response["response"]
+            
+            # Save pending payment record
+            await db.mp_payments.insert_one({
+                "id": str(uuid.uuid4()),
+                "preference_id": preference["id"],
+                "telegram_id": request.telegram_id,
+                "plan": request.plan,
+                "amount": plan["price_brl"],
+                "status": "pending",
+                "payment_method": "checkout_pro",
+                "created_at": datetime.now(timezone.utc).isoformat()
+            })
+            
+            return {
+                "preference_id": preference["id"],
+                "init_point": preference["init_point"],
+                "sandbox_init_point": preference["sandbox_init_point"]
+            }
+        else:
+            logger.error(f"MP Checkout error: {preference_response}")
+            raise HTTPException(status_code=500, detail="Erro ao criar checkout")
+            
+    except Exception as e:
+        logger.error(f"MP Checkout exception: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/mercadopago/pix")
+async def create_mp_pix(request: MPPixRequest):
+    """Create PIX payment"""
+    if not mp_sdk:
+        raise HTTPException(status_code=503, detail="Mercado Pago não configurado")
+    
+    plan = PLANS.get(request.plan)
+    if not plan or request.plan == "free":
+        raise HTTPException(status_code=400, detail="Plano inválido")
+    
+    backend_url = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8001")
+    
+    payment_data = {
+        "transaction_amount": plan["price_brl"],
+        "description": f"Ananda {plan['name']} - 30 dias",
+        "payment_method_id": "pix",
+        "payer": {
+            "email": request.email,
+            "first_name": request.user_name or "Usuário"
+        },
+        "external_reference": f"{request.telegram_id}|{request.plan}|{datetime.now(timezone.utc).timestamp()}",
+        "notification_url": f"{backend_url}/api/mercadopago/webhook"
+    }
+    
+    try:
+        payment_response = mp_sdk.payment().create(payment_data)
+        
+        if payment_response["status"] == 201:
+            payment = payment_response["response"]
+            
+            # Get PIX data
+            pix_data = payment.get("point_of_interaction", {}).get("transaction_data", {})
+            
+            # Save payment record
+            await db.mp_payments.insert_one({
+                "id": str(uuid.uuid4()),
+                "payment_id": str(payment["id"]),
+                "telegram_id": request.telegram_id,
+                "plan": request.plan,
+                "amount": plan["price_brl"],
+                "status": payment["status"],
+                "payment_method": "pix",
+                "pix_qr_code": pix_data.get("qr_code"),
+                "pix_qr_code_base64": pix_data.get("qr_code_base64"),
+                "pix_copy_paste": pix_data.get("qr_code"),
+                "expires_at": payment.get("date_of_expiration"),
+                "created_at": datetime.now(timezone.utc).isoformat()
+            })
+            
+            return {
+                "payment_id": payment["id"],
+                "status": payment["status"],
+                "qr_code": pix_data.get("qr_code"),
+                "qr_code_base64": pix_data.get("qr_code_base64"),
+                "expires_at": payment.get("date_of_expiration")
+            }
+        else:
+            logger.error(f"MP PIX error: {payment_response}")
+            raise HTTPException(status_code=500, detail="Erro ao criar PIX")
+            
+    except Exception as e:
+        logger.error(f"MP PIX exception: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/mercadopago/payment/{payment_id}")
+async def get_mp_payment_status(payment_id: str):
+    """Check payment status"""
+    if not mp_sdk:
+        raise HTTPException(status_code=503, detail="Mercado Pago não configurado")
+    
+    try:
+        payment_response = mp_sdk.payment().get(int(payment_id))
+        
+        if payment_response["status"] == 200:
+            payment = payment_response["response"]
+            return {
+                "payment_id": payment["id"],
+                "status": payment["status"],
+                "status_detail": payment.get("status_detail"),
+                "amount": payment.get("transaction_amount"),
+                "external_reference": payment.get("external_reference")
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Pagamento não encontrado")
+            
+    except Exception as e:
+        logger.error(f"MP Payment status error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/mercadopago/webhook")
+async def mp_webhook(request: Request):
+    """Handle Mercado Pago webhook notifications"""
+    try:
+        body = await request.json()
+        logger.info(f"MP Webhook received: {body}")
+        
+        # Handle different notification types
+        notification_type = body.get("type") or body.get("topic")
+        
+        if notification_type == "payment":
+            data_id = body.get("data", {}).get("id") or body.get("id")
+            
+            if data_id and mp_sdk:
+                # Get payment details
+                payment_response = mp_sdk.payment().get(int(data_id))
+                
+                if payment_response["status"] == 200:
+                    payment = payment_response["response"]
+                    status = payment["status"]
+                    external_ref = payment.get("external_reference", "")
+                    
+                    # Parse external reference: telegram_id|plan|timestamp
+                    parts = external_ref.split("|")
+                    if len(parts) >= 2:
+                        telegram_id = parts[0]
+                        plan = parts[1]
+                        
+                        # Update payment record
+                        await db.mp_payments.update_one(
+                            {"payment_id": str(data_id)},
+                            {
+                                "$set": {
+                                    "status": status,
+                                    "status_detail": payment.get("status_detail"),
+                                    "updated_at": datetime.now(timezone.utc).isoformat()
+                                }
+                            }
+                        )
+                        
+                        # If approved, activate subscription
+                        if status == "approved":
+                            await activate_subscription(telegram_id, plan, str(data_id))
+                            logger.info(f"Subscription activated for {telegram_id} - Plan: {plan}")
+                            
+                            # Notify user via Telegram if bot is available
+                            if telegram_app:
+                                try:
+                                    plan_info = PLANS.get(plan, {})
+                                    await telegram_app.bot.send_message(
+                                        chat_id=int(telegram_id),
+                                        text=f"🎉 *Pagamento Confirmado!*\n\n"
+                                             f"✨ Você agora é *{plan_info.get('name', plan)}*!\n"
+                                             f"📅 Válido por 30 dias\n\n"
+                                             f"Aproveite todos os benefícios! 🙏💕",
+                                        parse_mode='Markdown'
+                                    )
+                                except Exception as e:
+                                    logger.error(f"Failed to notify user: {e}")
+        
+        return {"status": "ok"}
+        
+    except Exception as e:
+        logger.error(f"MP Webhook error: {e}")
+        return {"status": "error", "message": str(e)}
+
+@api_router.get("/mercadopago/success")
+async def mp_success(
+    collection_id: Optional[str] = None,
+    collection_status: Optional[str] = None,
+    payment_id: Optional[str] = None,
+    status: Optional[str] = None,
+    external_reference: Optional[str] = None,
+    payment_type: Optional[str] = None,
+    merchant_order_id: Optional[str] = None,
+    preference_id: Optional[str] = None,
+    site_id: Optional[str] = None,
+    processing_mode: Optional[str] = None,
+    merchant_account_id: Optional[str] = None
+):
+    """Handle successful payment redirect"""
+    logger.info(f"MP Success: payment_id={payment_id}, status={status}, external_ref={external_reference}")
+    
+    # Parse external reference
+    if external_reference:
+        parts = external_reference.split("|")
+        if len(parts) >= 2:
+            telegram_id = parts[0]
+            plan = parts[1]
+            
+            # Activate subscription if payment approved
+            if status == "approved" and payment_id:
+                await activate_subscription(telegram_id, plan, payment_id)
+                
+                # Update payment record
+                await db.mp_payments.update_one(
+                    {"$or": [
+                        {"preference_id": preference_id},
+                        {"payment_id": payment_id}
+                    ]},
+                    {
+                        "$set": {
+                            "status": "approved",
+                            "payment_id": payment_id,
+                            "updated_at": datetime.now(timezone.utc).isoformat()
+                        }
+                    }
+                )
+    
+    # Redirect to success page
+    frontend_url = os.environ.get("REACT_APP_FRONTEND_URL", "http://localhost:3000")
+    return RedirectResponse(url=f"{frontend_url}?payment=success&plan={plan if external_reference else ''}")
+
+@api_router.get("/mercadopago/failure")
+async def mp_failure(
+    collection_id: Optional[str] = None,
+    collection_status: Optional[str] = None,
+    payment_id: Optional[str] = None,
+    status: Optional[str] = None,
+    external_reference: Optional[str] = None,
+    preference_id: Optional[str] = None
+):
+    """Handle failed payment redirect"""
+    logger.info(f"MP Failure: payment_id={payment_id}, status={status}")
+    
+    # Update payment record
+    if preference_id:
+        await db.mp_payments.update_one(
+            {"preference_id": preference_id},
+            {"$set": {"status": "failed", "updated_at": datetime.now(timezone.utc).isoformat()}}
+        )
+    
+    frontend_url = os.environ.get("REACT_APP_FRONTEND_URL", "http://localhost:3000")
+    return RedirectResponse(url=f"{frontend_url}?payment=failed")
+
+@api_router.get("/mercadopago/pending")
+async def mp_pending(
+    collection_id: Optional[str] = None,
+    collection_status: Optional[str] = None,
+    payment_id: Optional[str] = None,
+    status: Optional[str] = None,
+    external_reference: Optional[str] = None,
+    preference_id: Optional[str] = None
+):
+    """Handle pending payment redirect"""
+    logger.info(f"MP Pending: payment_id={payment_id}, status={status}")
+    
+    frontend_url = os.environ.get("REACT_APP_FRONTEND_URL", "http://localhost:3000")
+    return RedirectResponse(url=f"{frontend_url}?payment=pending")
+
+@api_router.get("/mercadopago/payments")
+async def get_mp_payments():
+    """Get all Mercado Pago payments"""
+    payments = await db.mp_payments.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return {"payments": payments}
+
 # Include the router in the main app
 app.include_router(api_router)
 
