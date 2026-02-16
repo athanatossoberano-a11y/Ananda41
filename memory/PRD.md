@@ -7,46 +7,42 @@ Sistema de bot espiritual Ananda com dois bots Telegram:
 
 ## Architecture
 - **Backend**: FastAPI + Python-Telegram-Bot + Motor (MongoDB)
-- **Frontend**: React + Tailwind CSS (Dashboard Admin)
+- **Frontend**: React + Tailwind CSS (Dashboard Admin + Dashboard Vendas)
 - **AI**: Gemini 2.5 Flash via Emergent LLM Key
 - **Database**: MongoDB
 - **Pagamentos**: Mercado Pago (Checkout Pro, PIX)
 
-## Bot de Pagamentos - Comandos Completos
+## Dashboard Web
+
+### Abas Disponíveis:
+1. **Dashboard** - Visão geral do bot
+2. **Vendas** - Dashboard de vendas e receita (NOVO)
+3. **Usuários** - Gerenciamento de usuários
+4. **Mensagens** - Monitoramento de conversas
+5. **Pedidos** - Pedidos de oração
+6. **Aprendizados** - IA aprendizados
+7. **Broadcast** - Enviar mensagens
+
+### Dashboard de Vendas:
+- Cards de métricas (Receita Total, Hoje, Semana, Mês)
+- Gráfico de receita dos últimos 7 dias
+- Top 5 compradores
+- Vendas por produto
+- Lista de transações com filtros
+
+## Bot de Pagamentos - Comandos
 
 ### Usuário:
-- `/start`, `/menu` - Menu inicial
-- `/premium`, `/vip` - Assinaturas
-- `/meditacao`, `/pacote`, `/oracao` - Produtos
-- `/doar [valor]` - Doação
-- `/minhascompras`, `/meusaldo` - Conta
+- `/start`, `/menu`, `/premium`, `/vip`
+- `/meditacao`, `/pacote`, `/oracao`, `/doar [valor]`
+- `/minhascompras`, `/meusaldo`
 
-### Admin - Gerenciamento:
-- `/ban [ID] [motivo]` - Banir
-- `/unban [ID]` - Desbanir
-- `/mute [ID] [min]` - Silenciar
-- `/unmute [ID]` - Remover silêncio
-- `/warn [ID] [motivo]` - Advertir
-- `/resetwarn [ID]` - Zerar warns
-- `/info [ID]` - Info completa
-
-### Admin - Moderação Automática:
-- `/antiflood [on/off/config]` - Proteção flood
-- `/antipalavroes [on/off]` - Filtro palavrões
-- `/autoban [on/off]` - Ban automático
-
-### Admin - Relatórios:
-- `/stats` - Estatísticas
-- `/vendas` - Vendas recentes
-- `/usuarios` - Lista usuários
-- `/banidos` - Lista banidos
-- `/mutados` - Lista silenciados
-- `/logs [qtd]` - Logs moderação
-- `/admin` - Ajuda completa
-
-### Admin - Comunicação:
-- `/broadcast [msg]` - Enviar para todos
-- `/dm [ID] [msg]` - Mensagem direta
+### Admin - Moderação:
+- `/ban`, `/unban`, `/mute`, `/unmute`
+- `/warn`, `/resetwarn`, `/info`
+- `/antiflood`, `/antipalavroes`, `/autoban`
+- `/banidos`, `/mutados`, `/logs`
+- `/broadcast`, `/dm`, `/admin`
 
 ## Environment Variables
 ```
@@ -65,8 +61,8 @@ REACT_APP_BACKEND_URL=https://seu-dominio.com
 - [x] Integração Mercado Pago
 - [x] Bot de Pagamentos separado
 - [x] Sistema de moderação completo
-- [x] AntiFlood e AntiPalavrões
-- [x] Ban/Unban/Mute/Unmute
-- [x] Sistema de advertências
-- [x] Logs de moderação
-- [x] Broadcast e DM
+- [x] Dashboard de Vendas no frontend
+- [x] Gráficos e métricas de receita
+- [x] Lista de transações com filtros
+- [x] Top compradores
+- [x] Vendas por produto
