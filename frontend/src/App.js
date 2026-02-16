@@ -716,6 +716,149 @@ function App() {
           </div>
         )}
 
+        {/* Sales Tab */}
+        {activeTab === 'sales' && (
+          <div className="space-y-8">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 
+                  className="text-3xl font-light text-stone-800 mb-2" 
+                  style={{ fontFamily: 'Cormorant Garamond, serif' }}
+                >
+                  Vendas & Receita
+                </h2>
+                <p className="text-stone-500">Acompanhe suas vendas e pagamentos via Mercado Pago</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <select
+                  data-testid="payment-filter"
+                  value={paymentFilter}
+                  onChange={(e) => setPaymentFilter(e.target.value)}
+                  className="px-4 py-2 rounded-xl border border-stone-200 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 outline-none transition-all duration-300 text-sm bg-white"
+                >
+                  <option value="all">Todos</option>
+                  <option value="approved">Aprovados</option>
+                  <option value="pending">Pendentes</option>
+                  <option value="failed">Falhos</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Sales Stats Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <SalesStatsCard
+                icon={Wallet}
+                title="Receita Total"
+                value={`R$ ${salesStats?.totalRevenue?.toFixed(2) || '0.00'}`}
+                subtitle={`${salesStats?.totalTransactions || 0} vendas`}
+                color="bg-gradient-to-br from-emerald-400 to-emerald-500"
+              />
+              <SalesStatsCard
+                icon={Calendar}
+                title="Hoje"
+                value={`R$ ${salesStats?.todayRevenue?.toFixed(2) || '0.00'}`}
+                subtitle="Receita do dia"
+                color="bg-gradient-to-br from-blue-400 to-blue-500"
+              />
+              <SalesStatsCard
+                icon={TrendingUp}
+                title="Esta Semana"
+                value={`R$ ${salesStats?.weekRevenue?.toFixed(2) || '0.00'}`}
+                subtitle="Últimos 7 dias"
+                color="bg-gradient-to-br from-purple-400 to-purple-500"
+              />
+              <SalesStatsCard
+                icon={DollarSign}
+                title="Este Mês"
+                value={`R$ ${salesStats?.monthRevenue?.toFixed(2) || '0.00'}`}
+                subtitle={`${salesStats?.pendingTransactions || 0} pendentes`}
+                color="bg-gradient-to-br from-amber-400 to-amber-500"
+              />
+            </div>
+
+            {/* Charts and Breakdown */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Revenue Chart */}
+              <div className="lg:col-span-2">
+                <SimpleLineChart 
+                  data={salesStats?.dailyRevenue || []} 
+                  label="Receita dos Últimos 7 Dias"
+                />
+              </div>
+
+              {/* Top Buyers */}
+              <div className="bg-white rounded-2xl border border-stone-100 shadow-sm p-6">
+                <h3 className="text-lg font-medium text-stone-800 mb-4" style={{ fontFamily: 'Cormorant Garamond, serif' }}>
+                  Top Compradores
+                </h3>
+                <div className="space-y-1">
+                  {salesStats?.topBuyers?.map((buyer, index) => (
+                    <TopBuyerCard key={buyer.telegram_id} buyer={buyer} index={index} />
+                  ))}
+                  {(!salesStats?.topBuyers || salesStats.topBuyers.length === 0) && (
+                    <p className="text-center text-stone-400 py-8">Nenhuma venda ainda</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Products Breakdown */}
+            <div className="bg-white rounded-2xl border border-stone-100 shadow-sm p-6">
+              <h3 className="text-lg font-medium text-stone-800 mb-4" style={{ fontFamily: 'Cormorant Garamond, serif' }}>
+                Vendas por Produto
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                {[
+                  { key: 'premium', label: 'Premium', icon: Star, color: 'yellow' },
+                  { key: 'vip', label: 'VIP', icon: Crown, color: 'purple' },
+                  { key: 'meditacao', label: 'Meditação', icon: Sparkles, color: 'blue' },
+                  { key: 'pacote_meditacao', label: 'Pacote 10', icon: Package, color: 'indigo' },
+                  { key: 'oracao', label: 'Oração', icon: Heart, color: 'rose' },
+                  { key: 'doacao', label: 'Doação', icon: Gift, color: 'pink' }
+                ].map(product => {
+                  const data = salesStats?.productBreakdown?.[product.key] || { count: 0, total: 0 };
+                  return (
+                    <div 
+                      key={product.key}
+                      className={`p-4 rounded-xl bg-${product.color}-50 border border-${product.color}-100`}
+                    >
+                      <product.icon className={`w-6 h-6 text-${product.color}-500 mb-2`} />
+                      <p className="text-sm font-medium text-stone-700">{product.label}</p>
+                      <p className="text-2xl font-semibold text-stone-800">{data.count}</p>
+                      <p className="text-xs text-stone-500">R$ {data.total.toFixed(2)}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Payments List */}
+            <div className="bg-white rounded-2xl border border-stone-100 shadow-sm p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-medium text-stone-800" style={{ fontFamily: 'Cormorant Garamond, serif' }}>
+                  Últimas Transações
+                </h3>
+                <span className="text-sm text-stone-400">
+                  {payments.filter(p => paymentFilter === 'all' || p.status === paymentFilter).length} transações
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[500px] overflow-y-auto">
+                {payments
+                  .filter(p => paymentFilter === 'all' || p.status === paymentFilter)
+                  .map(payment => (
+                    <PaymentCard key={payment.id} payment={payment} />
+                  ))}
+                {payments.filter(p => paymentFilter === 'all' || p.status === paymentFilter).length === 0 && (
+                  <div className="col-span-full text-center py-12 text-stone-400">
+                    <CreditCard className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p>Nenhuma transação encontrada</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Users Tab */}
         {activeTab === 'users' && (
           <div className="space-y-6">
