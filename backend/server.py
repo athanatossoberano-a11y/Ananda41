@@ -1950,7 +1950,13 @@ async def get_mp_payment_status(payment_id: str):
         raise HTTPException(status_code=503, detail="Mercado Pago não configurado")
     
     try:
-        payment_response = mp_sdk.payment().get(int(payment_id))
+        # Validate payment_id is numeric
+        try:
+            payment_id_int = int(payment_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="ID de pagamento inválido")
+        
+        payment_response = mp_sdk.payment().get(payment_id_int)
         
         if payment_response["status"] == 200:
             payment = payment_response["response"]
@@ -1961,12 +1967,16 @@ async def get_mp_payment_status(payment_id: str):
                 "amount": payment.get("transaction_amount"),
                 "external_reference": payment.get("external_reference")
             }
+        elif payment_response["status"] == 404:
+            raise HTTPException(status_code=404, detail="Pagamento não encontrado")
         else:
             raise HTTPException(status_code=404, detail="Pagamento não encontrado")
             
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"MP Payment status error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=404, detail="Pagamento não encontrado")
 
 @api_router.post("/mercadopago/webhook")
 async def mp_webhook(request: Request):
