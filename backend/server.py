@@ -135,6 +135,31 @@ class PrayerRequest(BaseModel):
     status: str = "pending"  # pending, prayed, answered
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+# ============ MERCADO PAGO MODELS ============
+
+class MPPaymentRequest(BaseModel):
+    plan: str  # premium, vip
+    telegram_id: str
+    user_name: Optional[str] = None
+    email: Optional[str] = None
+    payment_method: str = "checkout_pro"  # checkout_pro, pix
+
+class MPPixRequest(BaseModel):
+    plan: str
+    telegram_id: str
+    user_name: Optional[str] = None
+    email: str
+
+class MPWebhookData(BaseModel):
+    action: Optional[str] = None
+    api_version: Optional[str] = None
+    data: Optional[Dict[str, Any]] = None
+    date_created: Optional[str] = None
+    id: Optional[Any] = None
+    live_mode: Optional[bool] = None
+    type: Optional[str] = None
+    user_id: Optional[str] = None
+
 # ============ SUBSCRIPTION LOGIC ============
 
 async def get_user_subscription(telegram_id: str) -> dict:
