@@ -37,7 +37,10 @@ MP_ACCESS_TOKEN = os.environ.get("MP_ACCESS_TOKEN", "")
 MP_PUBLIC_KEY = os.environ.get("MP_PUBLIC_KEY", "")
 mp_sdk = mercadopago.SDK(MP_ACCESS_TOKEN) if MP_ACCESS_TOKEN else None
 
-# Subscription Plans (Telegram Stars)
+# Payment Bot Token (separate bot for payments/admin)
+PAYMENT_BOT_TOKEN = os.environ.get("PAYMENT_BOT_TOKEN", "")
+
+# Subscription Plans
 PLANS = {
     "free": {
         "name": "Gratuito",
@@ -48,14 +51,14 @@ PLANS = {
     },
     "premium": {
         "name": "Premium",
-        "price": 200,  # 200 Stars ≈ R$ 19,90
+        "price": 200,  # 200 Stars
         "price_brl": 19.90,
         "daily_messages": -1,  # Unlimited
         "features": ["Conversas ilimitadas", "Meditações ilimitadas", "Orações personalizadas", "Prioridade nas respostas"]
     },
     "vip": {
         "name": "VIP",
-        "price": 400,  # 400 Stars ≈ R$ 39,90
+        "price": 400,  # 400 Stars
         "price_brl": 39.90,
         "daily_messages": -1,  # Unlimited
         "features": ["Tudo do Premium", "Conteúdo exclusivo", "Atendimento prioritário", "Acesso antecipado a novidades"]
