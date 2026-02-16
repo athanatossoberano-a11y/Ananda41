@@ -65,8 +65,29 @@ PLANS = {
     }
 }
 
-# Telegram bot application
+# Individual Products (pay per use)
+PRODUCTS = {
+    "meditacao": {
+        "name": "Meditação Guiada",
+        "price_brl": 4.90,
+        "description": "Uma meditação guiada personalizada"
+    },
+    "pacote_meditacao": {
+        "name": "Pacote 10 Meditações",
+        "price_brl": 29.90,
+        "quantity": 10,
+        "description": "10 meditações guiadas personalizadas"
+    },
+    "oracao": {
+        "name": "Oração Personalizada",
+        "price_brl": 2.90,
+        "description": "Uma oração personalizada para sua intenção"
+    }
+}
+
+# Telegram bot applications
 telegram_app = None
+payment_bot_app = None
 
 # Configure logging
 logging.basicConfig(
